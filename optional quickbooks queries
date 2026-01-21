@@ -1,0 +1,182 @@
+// ================================================================================
+// OPTIONAL QUICKBOOKS QUERIES
+// ================================================================================
+// Add these only if your clients need them
+// Most CPA firms won't need these, but good to have in your archive
+
+
+// ================================================================================
+// QUERY 21: TIME ACTIVITY (For Professional Services)
+// ================================================================================
+// Query Name: TimeActivity
+// Description: Time tracking entries for billable hours
+// Use Case: Law firms, consultants, agencies that bill by the hour
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    query = "select * from TimeActivity where TxnDate >= '2024-01-01' MAXRESULTS 1000",
+    full_url = base_url & realm_id & "/query?query=" & Uri.EscapeDataString(query),
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    query_response = json[QueryResponse],
+    data = try query_response[TimeActivity] otherwise {},
+    
+    table = if data = {} or data = null then 
+                #table(
+                    {"TimeActivityId", "Date", "Hours", "Minutes", "Description", "EmployeeId", "EmployeeName", "CustomerId", "CustomerName", "HourlyRate", "IsBillable", "BillableStatus"},
+                    {}
+                )
+            else
+                let
+                    initial_table = Table.FromList(data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+                    expanded = Table.ExpandRecordColumn(initial_table, "Column1",
+                        {"Id", "TxnDate", "Hours", "Minutes", "Description", "EmployeeRef", "CustomerRef", "HourlyRate", "BillableStatus"},
+                        {"TimeActivityId", "Date", "Hours", "Minutes", "Description", "EmployeeRef", "CustomerRef", "HourlyRate", "BillableStatus"}
+                    ),
+                    expanded_employee = try Table.ExpandRecordColumn(expanded, "EmployeeRef", {"value", "name"}, {"EmployeeId", "EmployeeName"}) otherwise expanded,
+                    expanded_customer = try Table.ExpandRecordColumn(expanded_employee, "CustomerRef", {"value", "name"}, {"CustomerId", "CustomerName"}) otherwise expanded_employee,
+                    add_billable = Table.AddColumn(expanded_customer, "IsBillable", each [BillableStatus] = "Billable", type logical),
+                    typed = Table.TransformColumnTypes(add_billable, {{"Date", type date}, {"Hours", type number}, {"Minutes", type number}, {"HourlyRate", type number}})
+                in
+                    typed
+in
+    table
+
+
+// ================================================================================
+// QUERY 22: TAX CODE (For Multi-State/International)
+// ================================================================================
+// Query Name: TaxCode
+// Description: Tax codes and rates used in transactions
+// Use Case: Multi-state businesses, international companies with VAT
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    query = "select * from TaxCode MAXRESULTS 1000",
+    full_url = base_url & realm_id & "/query?query=" & Uri.EscapeDataString(query),
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    query_response = json[QueryResponse],
+    data = try query_response[TaxCode] otherwise {},
+    
+    table = if data = {} or data = null then 
+                #table(
+                    {"TaxCodeId", "Name", "Description", "Active", "Taxable", "TaxGroup"},
+                    {}
+                )
+            else
+                let
+                    initial_table = Table.FromList(data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+                    expanded = Table.ExpandRecordColumn(initial_table, "Column1",
+                        {"Id", "Name", "Description", "Active", "Taxable", "TaxGroup"},
+                        {"TaxCodeId", "Name", "Description", "Active", "Taxable", "TaxGroup"}
+                    ),
+                    typed = Table.TransformColumnTypes(expanded, {{"Active", type logical}, {"Taxable", type logical}, {"TaxGroup", type logical}})
+                in
+                    typed
+in
+    table
+
+
+// ================================================================================
+// QUERY 23: BUDGET (For Budget vs Actual Analysis)
+// ================================================================================
+// Query Name: Budget
+// Description: Budget data set up in QuickBooks
+// Use Case: Companies that use QB's budgeting features for budget vs actual reports
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    query = "select * from Budget MAXRESULTS 1000",
+    full_url = base_url & realm_id & "/query?query=" & Uri.EscapeDataString(query),
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    query_response = json[QueryResponse],
+    data = try query_response[Budget] otherwise {},
+    
+    table = if data = {} or data = null then 
+                #table(
+                    {"BudgetId", "Name", "BudgetType", "StartDate", "EndDate", "Active"},
+                    {}
+                )
+            else
+                let
+                    initial_table = Table.FromList(data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+                    expanded = Table.ExpandRecordColumn(initial_table, "Column1",
+                        {"Id", "Name", "BudgetType", "StartDate", "EndDate", "Active"},
+                        {"BudgetId", "Name", "BudgetType", "StartDate", "EndDate", "Active"}
+                    ),
+                    typed = Table.TransformColumnTypes(expanded, {{"StartDate", type date}, {"EndDate", type date}, {"Active", type logical}})
+                in
+                    typed
+in
+    table
+
+
+// ================================================================================
+// QUERY 24: PREFERENCES (Company Settings)
+// ================================================================================
+// Query Name: Preferences
+// Description: Company preferences and settings
+// Use Case: Understanding how the QB company is configured
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    full_url = base_url & realm_id & "/preferences",
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    preferences = json[Preferences],
+    
+    // Convert record to table for easy viewing
+    table = Record.ToTable(preferences)
+in
+    table
+
+
+// ================================================================================
+// IMPLEMENTATION NOTES
+// ================================================================================
+
+/*
+WHEN TO ADD THESE QUERIES:
+
+TimeActivity:
+✅ Use if client bills hourly (lawyers, consultants, agencies)
+✅ Use if you want to analyze employee productivity/utilization
+❌ Skip if client doesn't use time tracking in QB
+
+TaxCode:
+✅ Use if client operates in multiple states
+✅ Use if client has international sales (VAT)
+✅ Use for detailed sales tax reporting
+❌ Skip if client is single-state with simple sales tax
+
+Budget:
+✅ Use if client sets budgets in QuickBooks
+✅ Use for budget vs actual dashboards
+❌ Skip if budgets are managed in Excel or not used
+
+Preferences:
+✅ Use for troubleshooting QB setup
+✅ Use if building admin tools
+❌ Skip for standard financial dashboards
+
+MOST CPA FIRMS CAN SKIP ALL OF THESE
+The core 20 queries cover 95% of use cases for financial intelligence dashboards.
+*/
