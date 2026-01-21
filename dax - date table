@@ -1,0 +1,62 @@
+Date = 
+VAR MinDate = DATE(2020, 1, 1)
+VAR MaxDate = DATE(2030, 12, 31)
+VAR DateRange = CALENDAR(MinDate, MaxDate)
+RETURN
+    ADDCOLUMNS(
+        DateRange,
+        "Year", YEAR([Date]),
+        "Year-Month", FORMAT([Date], "YYYY-MM"),
+        "Year-Month Name", FORMAT([Date], "YYYY MMM"),
+        "Quarter", "Q" & FORMAT([Date], "Q"),
+        "Year-Quarter", FORMAT([Date], "YYYY") & " Q" & FORMAT([Date], "Q"),
+        "Month", MONTH([Date]),
+        "Month Name", FORMAT([Date], "MMMM"),
+        "Month Short", FORMAT([Date], "MMM"),
+        "Month-Year", FORMAT([Date], "MMM YYYY"),
+        "Day", DAY([Date]),
+        "Day Name", FORMAT([Date], "DDDD"),
+        "Day Short", FORMAT([Date], "DDD"),
+        "Day of Week", WEEKDAY([Date]),
+        "Day of Year", DATEDIFF(DATE(YEAR([Date]), 1, 1), [Date], DAY) + 1,
+        "Week of Year", WEEKNUM([Date]),
+        "Is Weekend", IF(WEEKDAY([Date]) IN {1, 7}, TRUE, FALSE),
+        "Is Weekday", IF(WEEKDAY([Date]) IN {2, 3, 4, 5, 6}, TRUE, FALSE),
+        "Fiscal Year", 
+            IF(
+                MONTH([Date]) >= 1,
+                YEAR([Date]),
+                YEAR([Date]) - 1
+            ),
+        "Fiscal Quarter", 
+            VAR FiscalStartMonth = 1
+            VAR MonthOffset = MOD(MONTH([Date]) - FiscalStartMonth + 12, 12)
+            RETURN "FQ" & QUOTIENT(MonthOffset, 3) + 1,
+        "Is Current Month", 
+            IF(
+                YEAR([Date]) = YEAR(TODAY()) && MONTH([Date]) = MONTH(TODAY()),
+                TRUE,
+                FALSE
+            ),
+        "Is Current Quarter",
+            IF(
+                YEAR([Date]) = YEAR(TODAY()) && QUARTER([Date]) = QUARTER(TODAY()),
+                TRUE,
+                FALSE
+            ),
+        "Is Current Year",
+            IF(YEAR([Date]) = YEAR(TODAY()), TRUE, FALSE),
+        "Is Last Month",
+            IF(
+                [Date] >= EOMONTH(TODAY(), -2) + 1 && [Date] <= EOMONTH(TODAY(), -1),
+                TRUE,
+                FALSE
+            ),
+        "Is Last Year",
+            IF(YEAR([Date]) = YEAR(TODAY()) - 1, TRUE, FALSE),
+        "Is Today",
+            IF([Date] = TODAY(), TRUE, FALSE),
+        "Days from Today", DATEDIFF([Date], TODAY(), DAY),
+        "Relative Month", 
+            (YEAR([Date]) - YEAR(TODAY())) * 12 + (MONTH([Date]) - MONTH(TODAY()))
+    )
