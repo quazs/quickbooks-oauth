@@ -1,0 +1,439 @@
+// ================================================================================
+// QUICKBOOKS LINE-LEVEL QUERIES FOR TAX PLANNING
+// ================================================================================
+// These queries extract line item details from transactions
+// Critical for identifying tax planning opportunities in real-time
+
+
+// ================================================================================
+// QUERY 25: INVOICE LINE ITEMS
+// ================================================================================
+// Query Name: InvoiceLineItems
+// Description: Individual line items from invoices (products/services sold)
+// Tax Use: Revenue classification, sales tax analysis
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    query = "select * from Invoice where TxnDate >= '2024-01-01' MAXRESULTS 1000",
+    full_url = base_url & realm_id & "/query?query=" & Uri.EscapeDataString(query),
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    query_response = json[QueryResponse],
+    data = try query_response[Invoice] otherwise {},
+    
+    table = if data = {} or data = null then 
+                #table(
+                    {"InvoiceId", "InvoiceDate", "CustomerId", "CustomerName", "LineId", "LineNum", "Description", "Amount", "ItemId", "ItemName", "Quantity", "UnitPrice", "AccountId", "AccountName", "TaxCodeId"},
+                    {}
+                )
+            else
+                let
+                    // Convert to table
+                    initial_table = Table.FromList(data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+                    
+                    // Expand invoice header
+                    expanded_header = Table.ExpandRecordColumn(initial_table, "Column1",
+                        {"Id", "TxnDate", "CustomerRef", "Line"},
+                        {"InvoiceId", "InvoiceDate", "CustomerRef", "Line"}
+                    ),
+                    
+                    // Expand customer
+                    expanded_customer = Table.ExpandRecordColumn(expanded_header, "CustomerRef", {"value", "name"}, {"CustomerId", "CustomerName"}),
+                    
+                    // Expand line items (this is the key step!)
+                    expanded_lines = Table.ExpandListColumn(expanded_customer, "Line"),
+                    
+                    // Expand line details
+                    expanded_line_detail = Table.ExpandRecordColumn(expanded_lines, "Line",
+                        {"Id", "LineNum", "Description", "Amount", "DetailType", "SalesItemLineDetail"},
+                        {"LineId", "LineNum", "Description", "Amount", "DetailType", "SalesItemLineDetail"}
+                    ),
+                    
+                    // Filter to only SalesItemLineDetail (exclude SubTotal lines, etc.)
+                    filtered = Table.SelectRows(expanded_line_detail, each [DetailType] = "SalesItemLineDetail"),
+                    
+                    // Expand sales item details
+                    expanded_item = try Table.ExpandRecordColumn(filtered, "SalesItemLineDetail",
+                        {"ItemRef", "Qty", "UnitPrice", "TaxCodeRef"},
+                        {"ItemRef", "Quantity", "UnitPrice", "TaxCodeRef"}
+                    ) otherwise filtered,
+                    
+                    // Expand item reference
+                    expanded_item_ref = try Table.ExpandRecordColumn(expanded_item, "ItemRef", {"value", "name"}, {"ItemId", "ItemName"}) otherwise expanded_item,
+                    
+                    // Expand tax code
+                    expanded_tax = try Table.ExpandRecordColumn(expanded_item_ref, "TaxCodeRef", {"value"}, {"TaxCodeId"}) otherwise expanded_item_ref,
+                    
+                    // Type conversions
+                    typed = Table.TransformColumnTypes(expanded_tax, {
+                        {"InvoiceDate", type date}, 
+                        {"Amount", type number}, 
+                        {"Quantity", type number}, 
+                        {"UnitPrice", type number}
+                    })
+                in
+                    typed
+in
+    table
+
+
+// ================================================================================
+// QUERY 26: PURCHASE LINE ITEMS (CRITICAL FOR TAX PLANNING!)
+// ================================================================================
+// Query Name: PurchaseLineItems
+// Description: Individual line items from purchases/expenses
+// Tax Use: Expense categorization, Section 179 identification, meal & entertainment
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    query = "select * from Purchase where TxnDate >= '2024-01-01' MAXRESULTS 1000",
+    full_url = base_url & realm_id & "/query?query=" & Uri.EscapeDataString(query),
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    query_response = json[QueryResponse],
+    data = try query_response[Purchase] otherwise {},
+    
+    table = if data = {} or data = null then 
+                #table(
+                    {"PurchaseId", "PurchaseDate", "VendorId", "VendorName", "PaymentType", "LineId", "LineNum", "Description", "Amount", "AccountId", "AccountName", "AccountType", "ItemId", "ItemName"},
+                    {}
+                )
+            else
+                let
+                    initial_table = Table.FromList(data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+                    
+                    // Expand purchase header
+                    expanded_header = Table.ExpandRecordColumn(initial_table, "Column1",
+                        {"Id", "TxnDate", "EntityRef", "PaymentType", "Line"},
+                        {"PurchaseId", "PurchaseDate", "VendorRef", "PaymentType", "Line"}
+                    ),
+                    
+                    // Expand vendor
+                    expanded_vendor = try Table.ExpandRecordColumn(expanded_header, "VendorRef", {"value", "name"}, {"VendorId", "VendorName"}) otherwise expanded_header,
+                    
+                    // Expand line items
+                    expanded_lines = Table.ExpandListColumn(expanded_vendor, "Line"),
+                    
+                    // Expand line details
+                    expanded_line_detail = Table.ExpandRecordColumn(expanded_lines, "Line",
+                        {"Id", "LineNum", "Description", "Amount", "DetailType", "AccountBasedExpenseLineDetail", "ItemBasedExpenseLineDetail"},
+                        {"LineId", "LineNum", "Description", "Amount", "DetailType", "AccountBasedExpenseLineDetail", "ItemBasedExpenseLineDetail"}
+                    ),
+                    
+                    // Handle both account-based and item-based expenses
+                    // Account-based (most common for expenses)
+                    expanded_account = try Table.ExpandRecordColumn(expanded_line_detail, "AccountBasedExpenseLineDetail",
+                        {"AccountRef"},
+                        {"AccountRef"}
+                    ) otherwise expanded_line_detail,
+                    
+                    expanded_account_ref = try Table.ExpandRecordColumn(expanded_account, "AccountRef", {"value", "name"}, {"AccountId", "AccountName"}) otherwise expanded_account,
+                    
+                    // Item-based (for inventory purchases)
+                    expanded_item = try Table.ExpandRecordColumn(expanded_account_ref, "ItemBasedExpenseLineDetail",
+                        {"ItemRef"},
+                        {"ItemRef"}
+                    ) otherwise expanded_account_ref,
+                    
+                    expanded_item_ref = try Table.ExpandRecordColumn(expanded_item, "ItemRef", {"value", "name"}, {"ItemId", "ItemName"}) otherwise expanded_item,
+                    
+                    // Type conversions
+                    typed = Table.TransformColumnTypes(expanded_item_ref, {
+                        {"PurchaseDate", type date}, 
+                        {"Amount", type number}
+                    })
+                in
+                    typed
+in
+    table
+
+
+// ================================================================================
+// QUERY 27: BILL LINE ITEMS
+// ================================================================================
+// Query Name: BillLineItems
+// Description: Individual line items from vendor bills
+// Tax Use: Expense categorization, accrual tracking
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    query = "select * from Bill where TxnDate >= '2024-01-01' MAXRESULTS 1000",
+    full_url = base_url & realm_id & "/query?query=" & Uri.EscapeDataString(query),
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    query_response = json[QueryResponse],
+    data = try query_response[Bill] otherwise {},
+    
+    table = if data = {} or data = null then 
+                #table(
+                    {"BillId", "BillDate", "DueDate", "VendorId", "VendorName", "LineId", "LineNum", "Description", "Amount", "AccountId", "AccountName"},
+                    {}
+                )
+            else
+                let
+                    initial_table = Table.FromList(data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+                    
+                    expanded_header = Table.ExpandRecordColumn(initial_table, "Column1",
+                        {"Id", "TxnDate", "DueDate", "VendorRef", "Line"},
+                        {"BillId", "BillDate", "DueDate", "VendorRef", "Line"}
+                    ),
+                    
+                    expanded_vendor = Table.ExpandRecordColumn(expanded_header, "VendorRef", {"value", "name"}, {"VendorId", "VendorName"}),
+                    
+                    expanded_lines = Table.ExpandListColumn(expanded_vendor, "Line"),
+                    
+                    expanded_line_detail = Table.ExpandRecordColumn(expanded_lines, "Line",
+                        {"Id", "LineNum", "Description", "Amount", "DetailType", "AccountBasedExpenseLineDetail"},
+                        {"LineId", "LineNum", "Description", "Amount", "DetailType", "AccountBasedExpenseLineDetail"}
+                    ),
+                    
+                    filtered = Table.SelectRows(expanded_line_detail, each [DetailType] = "AccountBasedExpenseLineDetail"),
+                    
+                    expanded_account = Table.ExpandRecordColumn(filtered, "AccountBasedExpenseLineDetail",
+                        {"AccountRef"},
+                        {"AccountRef"}
+                    ),
+                    
+                    expanded_account_ref = Table.ExpandRecordColumn(expanded_account, "AccountRef", {"value", "name"}, {"AccountId", "AccountName"}),
+                    
+                    typed = Table.TransformColumnTypes(expanded_account_ref, {
+                        {"BillDate", type date}, 
+                        {"DueDate", type date},
+                        {"Amount", type number}
+                    })
+                in
+                    typed
+in
+    table
+
+
+// ================================================================================
+// TAX PLANNING MEASURES (Add these to your _Measures table)
+// ================================================================================
+
+/*
+After creating the line item queries above, add these DAX measures:
+
+
+// === EXPENSE CATEGORIZATION FOR TAX PLANNING ===
+
+Meals & Entertainment Expenses = 
+CALCULATE(
+    SUM(PurchaseLineItems[Amount]),
+    FILTER(
+        Account,
+        Account[AccountName] IN {
+            "Meals and Entertainment",
+            "Meals & Entertainment", 
+            "Travel - Meals",
+            "Entertainment"
+        }
+    )
+)
+
+// Only 50% is deductible
+Meals & Entertainment Deduction = 
+[Meals & Entertainment Expenses] * 0.50
+
+
+Vehicle Expenses = 
+CALCULATE(
+    SUM(PurchaseLineItems[Amount]),
+    FILTER(
+        Account,
+        CONTAINSSTRING(Account[AccountName], "Vehicle") ||
+        CONTAINSSTRING(Account[AccountName], "Auto") ||
+        CONTAINSSTRING(Account[AccountName], "Car")
+    )
+)
+
+
+Fixed Asset Purchases = 
+CALCULATE(
+    SUM(PurchaseLineItems[Amount]),
+    FILTER(
+        Account,
+        Account[AccountType] = "Fixed Asset" &&
+        PurchaseLineItems[PurchaseDate] >= DATE(YEAR(TODAY()), 1, 1)
+    )
+)
+
+// Potential Section 179 deduction (up to $1,220,000 for 2024)
+Section 179 Opportunity = 
+VAR FixedAssetTotal = [Fixed Asset Purchases]
+VAR Section179Limit = 1220000
+RETURN
+    MIN(FixedAssetTotal, Section179Limit)
+
+
+Owner Distributions = 
+CALCULATE(
+    SUM(PurchaseLineItems[Amount]),
+    FILTER(
+        Account,
+        CONTAINSSTRING(Account[AccountName], "Owner") && 
+        CONTAINSSTRING(Account[AccountName], "Draw") ||
+        CONTAINSSTRING(Account[AccountName], "Distribution")
+    )
+)
+
+
+Home Office Expenses = 
+CALCULATE(
+    SUM(PurchaseLineItems[Amount]),
+    FILTER(
+        Account,
+        CONTAINSSTRING(Account[AccountName], "Home Office") ||
+        CONTAINSSTRING(Account[AccountName], "Rent - Home")
+    )
+)
+
+
+Health Insurance Premiums = 
+CALCULATE(
+    SUM(PurchaseLineItems[Amount]),
+    FILTER(
+        Account,
+        CONTAINSSTRING(Account[AccountName], "Health Insurance") ||
+        CONTAINSSTRING(Account[AccountName], "Medical Insurance")
+    )
+)
+
+
+Retirement Contributions = 
+CALCULATE(
+    SUM(PurchaseLineItems[Amount]),
+    FILTER(
+        Account,
+        CONTAINSSTRING(Account[AccountName], "401k") ||
+        CONTAINSSTRING(Account[AccountName], "SEP") ||
+        CONTAINSSTRING(Account[AccountName], "Retirement")
+    )
+)
+
+// 2024 limits: SEP IRA = $69,000, Solo 401k = $69,000 + $7,500 catch-up
+Retirement Contribution Room = 
+VAR CurrentContributions = [Retirement Contributions]
+VAR AnnualLimit = 69000
+RETURN
+    AnnualLimit - CurrentContributions
+
+
+// === ESTIMATED TAX CALCULATIONS ===
+
+Estimated Taxable Income = 
+[Gross Profit] - [Meals & Entertainment Deduction]
+
+
+Estimated Q1 Tax Liability = 
+VAR TaxableIncome = [Estimated Taxable Income]
+VAR EstimatedRate = 0.25  // Adjust based on client
+RETURN
+    TaxableIncome * EstimatedRate
+
+
+Safe Harbor Payment Needed = 
+VAR LastYearTax = 50000  // Get from prior year return
+RETURN
+    LastYearTax * 1.10  // 110% of prior year tax
+
+
+Quarterly Estimated Payment = 
+[Safe Harbor Payment Needed] / 4
+
+*/
+
+
+// ================================================================================
+// POWER AUTOMATE FLAGS - Transaction Monitoring Rules
+// ================================================================================
+
+/*
+These are the conditions you'll use in Power Automate to flag transactions:
+
+RULE 1: Large Fixed Asset Purchase
+Trigger: PurchaseLineItems[Amount] > 5000 AND Account[AccountType] = "Fixed Asset"
+Flag: "Section 179 Opportunity - Consider immediate expensing up to $1.22M"
+
+RULE 2: Large Owner Distribution
+Trigger: PurchaseLineItems[Amount] > 10000 AND Account contains "Distribution"
+Flag: "Review entity structure - S-corp salary requirement may apply"
+
+RULE 3: Meals Over Limit
+Trigger: PurchaseLineItems[Amount] > 75 AND Account contains "Meals"
+Flag: "Ensure documentation - meals are only 50% deductible"
+
+RULE 4: Retirement Contribution
+Trigger: Account contains "401k" OR "SEP" OR "Retirement"
+Flag: "Track against annual limits - SEP $69k, 401k $69k + $7.5k catchup"
+
+RULE 5: Health Insurance
+Trigger: Account contains "Health Insurance"
+Flag: "Self-employed health insurance deduction available"
+
+RULE 6: Vehicle Purchase
+Trigger: PurchaseLineItems[Amount] > 15000 AND Account contains "Vehicle"
+Flag: "Bonus depreciation available - consider timing for tax year"
+
+RULE 7: Large Expense (General)
+Trigger: PurchaseLineItems[Amount] > 2500
+Flag: "Review account coding and documentation"
+
+RULE 8: Quarterly Estimated Tax Check
+Trigger: Every quarter-end date
+Flag: "Calculate quarterly estimated tax payment due"
+*/
+
+
+// ================================================================================
+// IMPLEMENTATION NOTES
+// ================================================================================
+
+/*
+CRITICAL UPDATES NEEDED:
+
+1. ADD LINE ITEM QUERIES:
+   ✅ InvoiceLineItems
+   ✅ PurchaseLineItems  (MOST IMPORTANT!)
+   ✅ BillLineItems
+
+2. CREATE RELATIONSHIPS:
+   - PurchaseLineItems[AccountId] → Account[AccountId]
+   - PurchaseLineItems[PurchaseId] → Purchase[PurchaseId]
+   - BillLineItems[AccountId] → Account[AccountId]
+   - InvoiceLineItems[ItemId] → Item[ItemId]
+
+3. ADD TAX PLANNING MEASURES:
+   Copy all the measures from the section above into your _Measures table
+
+4. CREATE TAX PLANNING DASHBOARD PAGE:
+   - Section 179 Opportunities (show all fixed asset purchases YTD)
+   - Retirement Contribution Tracker (current vs limit)
+   - Meals & Entertainment (total and deductible amount)
+   - Owner Distribution Summary
+   - Quarterly Estimated Tax Calculator
+
+5. POWER AUTOMATE SETUP:
+   Use the rules above to create automated transaction monitoring
+   Email alerts when conditions are met
+
+WHY THIS MATTERS:
+Without line items, you only see "Total expenses: $50,000"
+With line items, you see "$15,000 vehicle purchase - Section 179 opportunity!"
+
+This is the difference between:
+❌ "Here's your financial dashboard"
+✅ "Alert: You just purchased equipment qualifying for $15k tax deduction"
+*/
