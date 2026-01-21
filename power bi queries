@@ -1,0 +1,1003 @@
+/*
+================================================================================
+QUICKBOOKS ONLINE TO POWER BI - COMPLETE QUERY LIBRARY
+================================================================================
+Author: Financial Intelligence Dashboard Project
+Date: January 2026
+Purpose: Comprehensive Power Query M code for connecting Power BI to QuickBooks API
+
+SETUP INSTRUCTIONS:
+1. Create GetAccessToken query first (see QUERY 0 below)
+2. Create each subsequent query as a new blank query in Power BI
+3. Replace YOUR_CLIENT_ID, YOUR_CLIENT_SECRET, YOUR_REFRESH_TOKEN, YOUR_REALM_ID
+4. Change base_url when switching from sandbox to production
+5. Set privacy levels to "Organizational" or disable privacy checks
+
+GITHUB REPOSITORY STRUCTURE:
+/queries
+  /core
+    - 00_GetAccessToken.pq
+    - 01_Invoice.pq
+    - 02_Purchase.pq
+    etc.
+  /readme.md (implementation guide)
+
+================================================================================
+*/
+
+
+// ================================================================================
+// QUERY 0: GET ACCESS TOKEN (REQUIRED - CREATE THIS FIRST)
+// ================================================================================
+// Query Name: GetAccessToken
+// Description: Refreshes OAuth access token using refresh token
+// Dependencies: None
+// Returns: String (access token valid for 1 hour)
+
+let
+    // ====== REPLACE THESE VALUES WITH YOUR CREDENTIALS ======
+    client_id = "YOUR_CLIENT_ID_HERE",
+    client_secret = "YOUR_CLIENT_SECRET_HERE", 
+    refresh_token = "YOUR_REFRESH_TOKEN_HERE",
+    // =========================================================
+    
+    // Encode credentials for Basic Authentication
+    credentials = Text.ToBinary(client_id & ":" & client_secret),
+    encoded_credentials = Binary.ToText(credentials, BinaryEncoding.Base64),
+    
+    // Request body for token refresh
+    token_body = "grant_type=refresh_token&refresh_token=" & refresh_token,
+    
+    // Make token refresh request to Intuit OAuth endpoint
+    token_response = Web.Contents(
+        "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer",
+        [
+            Headers = [
+                #"Authorization" = "Basic " & encoded_credentials,
+                #"Content-Type" = "application/x-www-form-urlencoded",
+                #"Accept" = "application/json"
+            ],
+            Content = Text.ToBinary(token_body),
+            ManualStatusHandling = {400, 401}
+        ]
+    ),
+    
+    // Parse JSON response
+    token_json = Json.Document(token_response),
+    
+    // Extract access token
+    access_token = token_json[access_token],
+    
+    // Note: new_refresh_token is also returned but not used in automated refresh
+    new_refresh_token = token_json[refresh_token]
+in
+    access_token
+
+
+// ================================================================================
+// QUERY 1: INVOICE
+// ================================================================================
+// Query Name: Invoice
+// Description: Customer invoices (accounts receivable)
+// Dependencies: GetAccessToken
+// Key Fields: InvoiceId, Date, Amount, Balance, CustomerName
+
+let
+    // ====== CONFIGURATION ======
+    realm_id = "YOUR_REALM_ID_HERE",
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    // For production: "https://quickbooks.api.intuit.com/v3/company/"
+    // ===========================
+    
+    access_token = GetAccessToken,
+    
+    // Query to get all invoices (adjust date filter as needed)
+    query = "select * from Invoice where TxnDate >= '2024-01-01' MAXRESULTS 1000",
+    full_url = base_url & realm_id & "/query?query=" & Uri.EscapeDataString(query),
+    
+    // API request
+    response = Web.Contents(
+        full_url,
+        [
+            Headers = [
+                #"Authorization" = "Bearer " & access_token,
+                #"Accept" = "application/json"
+            ]
+        ]
+    ),
+    
+    // Parse response
+    json = Json.Document(response),
+    query_response = json[QueryResponse],
+    invoice_data = try query_response[Invoice] otherwise {},
+    
+    // Convert to table
+    table = Table.FromList(invoice_data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+    
+    // Expand invoice fields
+    expanded = Table.ExpandRecordColumn(
+        table, 
+        "Column1",
+        {"Id", "TxnDate", "DueDate", "TotalAmt", "Balance", "CustomerRef", "Line", "DocNumber", "EmailStatus", "PrintStatus"},
+        {"InvoiceId", "Date", "DueDate", "TotalAmount", "Balance", "CustomerRef", "Line", "InvoiceNumber", "EmailStatus", "PrintStatus"}
+    ),
+    
+    // Expand customer reference
+    expanded_customer = Table.ExpandRecordColumn(
+        expanded,
+        "CustomerRef",
+        {"value", "name"},
+        {"CustomerId", "CustomerName"}
+    ),
+    
+    // Type conversion
+    typed = Table.TransformColumnTypes(
+        expanded_customer,
+        {
+            {"Date", type date},
+            {"DueDate", type date},
+            {"TotalAmount", type number},
+            {"Balance", type number}
+        }
+    )
+in
+    typed
+
+
+// ================================================================================
+// QUERY 2: PURCHASE
+// ================================================================================
+// Query Name: Purchase
+// Description: Expenses, checks, credit card charges
+// Dependencies: GetAccessToken
+// Key Fields: PurchaseId, Date, Amount, VendorName, AccountName
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    query = "select * from Purchase where TxnDate >= '2024-01-01' MAXRESULTS 1000",
+    full_url = base_url & realm_id & "/query?query=" & Uri.EscapeDataString(query),
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    query_response = json[QueryResponse],
+    purchase_data = try query_response[Purchase] otherwise {},
+    
+    table = Table.FromList(purchase_data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+    
+    expanded = Table.ExpandRecordColumn(
+        table,
+        "Column1",
+        {"Id", "TxnDate", "TotalAmt", "PaymentType", "EntityRef", "AccountRef", "Line", "DocNumber"},
+        {"PurchaseId", "Date", "Amount", "PaymentType", "VendorRef", "AccountRef", "Line", "DocNumber"}
+    ),
+    
+    expanded_vendor = try Table.ExpandRecordColumn(
+        expanded,
+        "VendorRef",
+        {"value", "name"},
+        {"VendorId", "VendorName"}
+    ) otherwise expanded,
+    
+    expanded_account = try Table.ExpandRecordColumn(
+        expanded_vendor,
+        "AccountRef",
+        {"value", "name"},
+        {"AccountId", "AccountName"}
+    ) otherwise expanded_vendor,
+    
+    typed = Table.TransformColumnTypes(
+        expanded_account,
+        {
+            {"Date", type date},
+            {"Amount", type number}
+        }
+    )
+in
+    typed
+
+
+// ================================================================================
+// QUERY 3: PAYMENT
+// ================================================================================
+// Query Name: Payment
+// Description: Customer payments received
+// Dependencies: GetAccessToken
+// Key Fields: PaymentId, Date, Amount, CustomerName, PaymentMethod
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    query = "select * from Payment where TxnDate >= '2024-01-01' MAXRESULTS 1000",
+    full_url = base_url & realm_id & "/query?query=" & Uri.EscapeDataString(query),
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    query_response = json[QueryResponse],
+    payment_data = try query_response[Payment] otherwise {},
+    
+    table = Table.FromList(payment_data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+    
+    expanded = Table.ExpandRecordColumn(
+        table,
+        "Column1",
+        {"Id", "TxnDate", "TotalAmt", "CustomerRef", "PaymentMethodRef", "DepositToAccountRef", "UnappliedAmt", "PaymentRefNum"},
+        {"PaymentId", "Date", "Amount", "CustomerRef", "PaymentMethod", "DepositAccount", "UnappliedAmount", "ReferenceNumber"}
+    ),
+    
+    expanded_customer = Table.ExpandRecordColumn(
+        expanded,
+        "CustomerRef",
+        {"value", "name"},
+        {"CustomerId", "CustomerName"}
+    ),
+    
+    expanded_method = try Table.ExpandRecordColumn(
+        expanded_customer,
+        "PaymentMethod",
+        {"name"},
+        {"PaymentMethodName"}
+    ) otherwise expanded_customer,
+    
+    typed = Table.TransformColumnTypes(
+        expanded_method,
+        {
+            {"Date", type date},
+            {"Amount", type number},
+            {"UnappliedAmount", type number}
+        }
+    )
+in
+    typed
+
+
+// ================================================================================
+// QUERY 4: CUSTOMER
+// ================================================================================
+// Query Name: Customer
+// Description: Customer master list
+// Dependencies: GetAccessToken
+// Key Fields: CustomerId, DisplayName, Balance, Email, Phone
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    query = "select * from Customer MAXRESULTS 1000",
+    full_url = base_url & realm_id & "/query?query=" & Uri.EscapeDataString(query),
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    query_response = json[QueryResponse],
+    customer_data = try query_response[Customer] otherwise {},
+    
+    table = Table.FromList(customer_data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+    
+    expanded = Table.ExpandRecordColumn(
+        table,
+        "Column1",
+        {"Id", "DisplayName", "CompanyName", "GivenName", "FamilyName", "PrimaryEmailAddr", "PrimaryPhone", "Balance", "Active", "BillAddr"},
+        {"CustomerId", "DisplayName", "CompanyName", "FirstName", "LastName", "Email", "Phone", "Balance", "Active", "BillingAddress"}
+    ),
+    
+    expanded_email = try Table.ExpandRecordColumn(
+        expanded,
+        "Email",
+        {"Address"},
+        {"EmailAddress"}
+    ) otherwise expanded,
+    
+    expanded_phone = try Table.ExpandRecordColumn(
+        expanded_email,
+        "Phone",
+        {"FreeFormNumber"},
+        {"PhoneNumber"}
+    ) otherwise expanded_email,
+    
+    typed = Table.TransformColumnTypes(
+        expanded_phone,
+        {
+            {"Balance", type number},
+            {"Active", type logical}
+        }
+    )
+in
+    typed
+
+
+// ================================================================================
+// QUERY 5: ACCOUNT
+// ================================================================================
+// Query Name: Account
+// Description: Chart of accounts
+// Dependencies: GetAccessToken
+// Key Fields: AccountId, AccountName, AccountType, CurrentBalance
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    query = "select * from Account MAXRESULTS 1000",
+    full_url = base_url & realm_id & "/query?query=" & Uri.EscapeDataString(query),
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    query_response = json[QueryResponse],
+    account_data = try query_response[Account] otherwise {},
+    
+    table = Table.FromList(account_data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+    
+    expanded = Table.ExpandRecordColumn(
+        table,
+        "Column1",
+        {"Id", "Name", "AccountType", "AccountSubType", "AcctNum", "CurrentBalance", "Active", "Classification", "FullyQualifiedName"},
+        {"AccountId", "AccountName", "AccountType", "AccountSubType", "AccountNumber", "CurrentBalance", "Active", "Classification", "FullyQualifiedName"}
+    ),
+    
+    typed = Table.TransformColumnTypes(
+        expanded,
+        {
+            {"CurrentBalance", type number},
+            {"Active", type logical}
+        }
+    )
+in
+    typed
+
+
+// ================================================================================
+// QUERY 6: SALES RECEIPT
+// ================================================================================
+// Query Name: SalesReceipt
+// Description: Cash sales and point-of-sale transactions
+// Dependencies: GetAccessToken
+// Key Fields: SalesReceiptId, Date, Amount, CustomerName
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    query = "select * from SalesReceipt where TxnDate >= '2024-01-01' MAXRESULTS 1000",
+    full_url = base_url & realm_id & "/query?query=" & Uri.EscapeDataString(query),
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    query_response = json[QueryResponse],
+    data = try query_response[SalesReceipt] otherwise {},
+    
+    table = Table.FromList(data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+    
+    expanded = Table.ExpandRecordColumn(table, "Column1",
+        {"Id", "TxnDate", "TotalAmt", "CustomerRef", "PaymentMethodRef", "DepositToAccountRef", "DocNumber"},
+        {"SalesReceiptId", "Date", "Amount", "CustomerRef", "PaymentMethod", "DepositAccount", "DocNumber"}
+    ),
+    
+    expanded_customer = Table.ExpandRecordColumn(expanded, "CustomerRef", {"value", "name"}, {"CustomerId", "CustomerName"}),
+    expanded_method = try Table.ExpandRecordColumn(expanded_customer, "PaymentMethod", {"name"}, {"PaymentMethodName"}) otherwise expanded_customer,
+    
+    typed = Table.TransformColumnTypes(expanded_method, {{"Date", type date}, {"Amount", type number}})
+in
+    typed
+
+
+// ================================================================================
+// QUERY 7: ESTIMATE
+// ================================================================================
+// Query Name: Estimate
+// Description: Quotes and proposals to customers
+// Dependencies: GetAccessToken
+// Key Fields: EstimateId, Date, Amount, CustomerName, Status
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    query = "select * from Estimate MAXRESULTS 1000",
+    full_url = base_url & realm_id & "/query?query=" & Uri.EscapeDataString(query),
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    query_response = json[QueryResponse],
+    data = try query_response[Estimate] otherwise {},
+    
+    table = Table.FromList(data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+    
+    expanded = Table.ExpandRecordColumn(table, "Column1",
+        {"Id", "TxnDate", "TotalAmt", "CustomerRef", "TxnStatus", "ExpirationDate", "AcceptedBy", "AcceptedDate", "DocNumber"},
+        {"EstimateId", "Date", "Amount", "CustomerRef", "Status", "ExpirationDate", "AcceptedBy", "AcceptedDate", "DocNumber"}
+    ),
+    
+    expanded_customer = Table.ExpandRecordColumn(expanded, "CustomerRef", {"value", "name"}, {"CustomerId", "CustomerName"}),
+    
+    typed = Table.TransformColumnTypes(expanded_customer, {{"Date", type date}, {"Amount", type number}, {"ExpirationDate", type date}, {"AcceptedDate", type date}})
+in
+    typed
+
+
+// ================================================================================
+// QUERY 8: CREDIT MEMO
+// ================================================================================
+// Query Name: CreditMemo
+// Description: Customer credits and refunds
+// Dependencies: GetAccessToken
+// Key Fields: CreditMemoId, Date, Amount, CustomerName, RemainingCredit
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    query = "select * from CreditMemo where TxnDate >= '2024-01-01' MAXRESULTS 1000",
+    full_url = base_url & realm_id & "/query?query=" & Uri.EscapeDataString(query),
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    query_response = json[QueryResponse],
+    data = try query_response[CreditMemo] otherwise {},
+    
+    table = Table.FromList(data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+    
+    expanded = Table.ExpandRecordColumn(table, "Column1",
+        {"Id", "TxnDate", "TotalAmt", "CustomerRef", "RemainingCredit", "Balance", "DocNumber"},
+        {"CreditMemoId", "Date", "Amount", "CustomerRef", "RemainingCredit", "Balance", "DocNumber"}
+    ),
+    
+    expanded_customer = Table.ExpandRecordColumn(expanded, "CustomerRef", {"value", "name"}, {"CustomerId", "CustomerName"}),
+    
+    typed = Table.TransformColumnTypes(expanded_customer, {{"Date", type date}, {"Amount", type number}, {"RemainingCredit", type number}, {"Balance", type number}})
+in
+    typed
+
+
+// ================================================================================
+// QUERY 9: BILL
+// ================================================================================
+// Query Name: Bill
+// Description: Vendor bills (accounts payable)
+// Dependencies: GetAccessToken
+// Key Fields: BillId, Date, DueDate, Amount, Balance, VendorName
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    query = "select * from Bill where TxnDate >= '2024-01-01' MAXRESULTS 1000",
+    full_url = base_url & realm_id & "/query?query=" & Uri.EscapeDataString(query),
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    query_response = json[QueryResponse],
+    data = try query_response[Bill] otherwise {},
+    
+    table = Table.FromList(data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+    
+    expanded = Table.ExpandRecordColumn(table, "Column1",
+        {"Id", "TxnDate", "DueDate", "TotalAmt", "Balance", "VendorRef", "DocNumber"},
+        {"BillId", "Date", "DueDate", "Amount", "Balance", "VendorRef", "DocNumber"}
+    ),
+    
+    expanded_vendor = Table.ExpandRecordColumn(expanded, "VendorRef", {"value", "name"}, {"VendorId", "VendorName"}),
+    
+    typed = Table.TransformColumnTypes(expanded_vendor, {{"Date", type date}, {"DueDate", type date}, {"Amount", type number}, {"Balance", type number}})
+in
+    typed
+
+
+// ================================================================================
+// QUERY 10: BILL PAYMENT
+// ================================================================================
+// Query Name: BillPayment
+// Description: Payments to vendors
+// Dependencies: GetAccessToken
+// Key Fields: BillPaymentId, Date, Amount, VendorName, CheckNumber
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    query = "select * from BillPayment where TxnDate >= '2024-01-01' MAXRESULTS 1000",
+    full_url = base_url & realm_id & "/query?query=" & Uri.EscapeDataString(query),
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    query_response = json[QueryResponse],
+    data = try query_response[BillPayment] otherwise {},
+    
+    table = Table.FromList(data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+    
+    expanded = Table.ExpandRecordColumn(table, "Column1",
+        {"Id", "TxnDate", "TotalAmt", "VendorRef", "PayType", "CheckNum", "DocNumber"},
+        {"BillPaymentId", "Date", "Amount", "VendorRef", "PaymentType", "CheckNumber", "DocNumber"}
+    ),
+    
+    expanded_vendor = Table.ExpandRecordColumn(expanded, "VendorRef", {"value", "name"}, {"VendorId", "VendorName"}),
+    
+    typed = Table.TransformColumnTypes(expanded_vendor, {{"Date", type date}, {"Amount", type number}})
+in
+    typed
+
+
+// ================================================================================
+// QUERY 11: VENDOR CREDIT
+// ================================================================================
+// Query Name: VendorCredit
+// Description: Credits from vendors
+// Dependencies: GetAccessToken
+// Key Fields: VendorCreditId, Date, Amount, VendorName, Balance
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    query = "select * from VendorCredit where TxnDate >= '2024-01-01' MAXRESULTS 1000",
+    full_url = base_url & realm_id & "/query?query=" & Uri.EscapeDataString(query),
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    query_response = json[QueryResponse],
+    data = try query_response[VendorCredit] otherwise {},
+    
+    table = Table.FromList(data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+    
+    expanded = Table.ExpandRecordColumn(table, "Column1",
+        {"Id", "TxnDate", "TotalAmt", "VendorRef", "Balance", "DocNumber"},
+        {"VendorCreditId", "Date", "Amount", "VendorRef", "Balance", "DocNumber"}
+    ),
+    
+    expanded_vendor = Table.ExpandRecordColumn(expanded, "VendorRef", {"value", "name"}, {"VendorId", "VendorName"}),
+    
+    typed = Table.TransformColumnTypes(expanded_vendor, {{"Date", type date}, {"Amount", type number}, {"Balance", type number}})
+in
+    typed
+
+
+// ================================================================================
+// QUERY 12: VENDOR
+// ================================================================================
+// Query Name: Vendor
+// Description: Vendor master list
+// Dependencies: GetAccessToken
+// Key Fields: VendorId, DisplayName, Balance, Email, Phone, Is1099
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    query = "select * from Vendor MAXRESULTS 1000",
+    full_url = base_url & realm_id & "/query?query=" & Uri.EscapeDataString(query),
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    query_response = json[QueryResponse],
+    data = try query_response[Vendor] otherwise {},
+    
+    table = Table.FromList(data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+    
+    expanded = Table.ExpandRecordColumn(table, "Column1",
+        {"Id", "DisplayName", "CompanyName", "GivenName", "FamilyName", "PrimaryEmailAddr", "PrimaryPhone", "Balance", "Active", "Vendor1099"},
+        {"VendorId", "DisplayName", "CompanyName", "FirstName", "LastName", "Email", "Phone", "Balance", "Active", "Is1099"}
+    ),
+    
+    expanded_email = try Table.ExpandRecordColumn(expanded, "Email", {"Address"}, {"EmailAddress"}) otherwise expanded,
+    expanded_phone = try Table.ExpandRecordColumn(expanded_email, "Phone", {"FreeFormNumber"}, {"PhoneNumber"}) otherwise expanded_email,
+    
+    typed = Table.TransformColumnTypes(expanded_phone, {{"Balance", type number}, {"Active", type logical}, {"Is1099", type logical}})
+in
+    typed
+
+
+// ================================================================================
+// QUERY 13: EMPLOYEE
+// ================================================================================
+// Query Name: Employee
+// Description: Employee master list
+// Dependencies: GetAccessToken
+// Key Fields: EmployeeId, DisplayName, Email, Active, HiredDate
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    query = "select * from Employee MAXRESULTS 1000",
+    full_url = base_url & realm_id & "/query?query=" & Uri.EscapeDataString(query),
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    query_response = json[QueryResponse],
+    data = try query_response[Employee] otherwise {},
+    
+    table = Table.FromList(data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+    
+    expanded = Table.ExpandRecordColumn(table, "Column1",
+        {"Id", "DisplayName", "GivenName", "FamilyName", "PrimaryEmailAddr", "PrimaryPhone", "Active", "HiredDate", "ReleasedDate"},
+        {"EmployeeId", "DisplayName", "FirstName", "LastName", "Email", "Phone", "Active", "HiredDate", "ReleasedDate"}
+    ),
+    
+    expanded_email = try Table.ExpandRecordColumn(expanded, "Email", {"Address"}, {"EmailAddress"}) otherwise expanded,
+    expanded_phone = try Table.ExpandRecordColumn(expanded_email, "Phone", {"FreeFormNumber"}, {"PhoneNumber"}) otherwise expanded_email,
+    
+    typed = Table.TransformColumnTypes(expanded_phone, {{"Active", type logical}, {"HiredDate", type date}, {"ReleasedDate", type date}})
+in
+    typed
+
+
+// ================================================================================
+// QUERY 14: ITEM
+// ================================================================================
+// Query Name: Item
+// Description: Products and services catalog
+// Dependencies: GetAccessToken
+// Key Fields: ItemId, Name, Type, UnitPrice, QtyOnHand
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    query = "select * from Item MAXRESULTS 1000",
+    full_url = base_url & realm_id & "/query?query=" & Uri.EscapeDataString(query),
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    query_response = json[QueryResponse],
+    data = try query_response[Item] otherwise {},
+    
+    table = Table.FromList(data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+    
+    expanded = Table.ExpandRecordColumn(table, "Column1",
+        {"Id", "Name", "Type", "Description", "UnitPrice", "QtyOnHand", "Active", "IncomeAccountRef", "ExpenseAccountRef", "Sku"},
+        {"ItemId", "Name", "Type", "Description", "UnitPrice", "QtyOnHand", "Active", "IncomeAccount", "ExpenseAccount", "SKU"}
+    ),
+    
+    expanded_income = try Table.ExpandRecordColumn(expanded, "IncomeAccount", {"value", "name"}, {"IncomeAccountId", "IncomeAccountName"}) otherwise expanded,
+    expanded_expense = try Table.ExpandRecordColumn(expanded_income, "ExpenseAccount", {"value", "name"}, {"ExpenseAccountId", "ExpenseAccountName"}) otherwise expanded_income,
+    
+    typed = Table.TransformColumnTypes(expanded_expense, {{"UnitPrice", type number}, {"QtyOnHand", type number}, {"Active", type logical}})
+in
+    typed
+
+
+// ================================================================================
+// QUERY 15: CLASS
+// ================================================================================
+// Query Name: Class
+// Description: Departments, divisions, or locations (class tracking)
+// Dependencies: GetAccessToken
+// Key Fields: ClassId, ClassName, Active, ParentClassName
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    query = "select * from Class MAXRESULTS 1000",
+    full_url = base_url & realm_id & "/query?query=" & Uri.EscapeDataString(query),
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    query_response = json[QueryResponse],
+    data = try query_response[Class] otherwise {},
+    
+    table = Table.FromList(data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+    
+    expanded = Table.ExpandRecordColumn(table, "Column1",
+        {"Id", "Name", "Active", "SubClass", "ParentRef", "FullyQualifiedName"},
+        {"ClassId", "ClassName", "Active", "IsSubClass", "ParentRef", "FullyQualifiedName"}
+    ),
+    
+    expanded_parent = try Table.ExpandRecordColumn(expanded, "ParentRef", {"value", "name"}, {"ParentClassId", "ParentClassName"}) otherwise expanded,
+    
+    typed = Table.TransformColumnTypes(expanded_parent, {{"Active", type logical}, {"IsSubClass", type logical}})
+in
+    typed
+
+
+// ================================================================================
+// QUERY 16: DEPARTMENT
+// ================================================================================
+// Query Name: Department
+// Description: Organizational units (if using department tracking instead of classes)
+// Dependencies: GetAccessToken
+// Key Fields: DepartmentId, DepartmentName, Active
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    query = "select * from Department MAXRESULTS 1000",
+    full_url = base_url & realm_id & "/query?query=" & Uri.EscapeDataString(query),
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    query_response = json[QueryResponse],
+    data = try query_response[Department] otherwise {},
+    
+    table = Table.FromList(data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+    
+    expanded = Table.ExpandRecordColumn(table, "Column1",
+        {"Id", "Name", "Active", "SubDepartment", "ParentRef", "FullyQualifiedName"},
+        {"DepartmentId", "DepartmentName", "Active", "IsSubDepartment", "ParentRef", "FullyQualifiedName"}
+    ),
+    
+    expanded_parent = try Table.ExpandRecordColumn(expanded, "ParentRef", {"value", "name"}, {"ParentDeptId", "ParentDeptName"}) otherwise expanded,
+    
+    typed = Table.TransformColumnTypes(expanded_parent, {{"Active", type logical}, {"IsSubDepartment", type logical}})
+in
+    typed
+
+
+// ================================================================================
+// QUERY 17: DEPOSIT
+// ================================================================================
+// Query Name: Deposit
+// Description: Bank deposits
+// Dependencies: GetAccessToken
+// Key Fields: DepositId, Date, Amount, AccountName
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    query = "select * from Deposit where TxnDate >= '2024-01-01' MAXRESULTS 1000",
+    full_url = base_url & realm_id & "/query?query=" & Uri.EscapeDataString(query),
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    query_response = json[QueryResponse],
+    data = try query_response[Deposit] otherwise {},
+    
+    table = Table.FromList(data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+    
+    expanded = Table.ExpandRecordColumn(table, "Column1",
+        {"Id", "TxnDate", "TotalAmt", "DepositToAccountRef", "PrivateNote"},
+        {"DepositId", "Date", "Amount", "DepositAccount", "Notes"}
+    ),
+    
+    expanded_account = Table.ExpandRecordColumn(expanded, "DepositAccount", {"value", "name"}, {"AccountId", "AccountName"}),
+    
+    typed = Table.TransformColumnTypes(expanded_account, {{"Date", type date}, {"Amount", type number}})
+in
+    typed
+
+
+// ================================================================================
+// QUERY 18: TRANSFER
+// ================================================================================
+// Query Name: Transfer
+// Description: Transfers between accounts
+// Dependencies: GetAccessToken
+// Key Fields: TransferId, Date, Amount, FromAccountName, ToAccountName
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    query = "select * from Transfer where TxnDate >= '2024-01-01' MAXRESULTS 1000",
+    full_url = base_url & realm_id & "/query?query=" & Uri.EscapeDataString(query),
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    query_response = json[QueryResponse],
+    data = try query_response[Transfer] otherwise {},
+    
+    table = Table.FromList(data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+    
+    expanded = Table.ExpandRecordColumn(table, "Column1",
+        {"Id", "TxnDate", "Amount", "FromAccountRef", "ToAccountRef", "PrivateNote"},
+        {"TransferId", "Date", "Amount", "FromAccount", "ToAccount", "Notes"}
+    ),
+    
+    expanded_from = Table.ExpandRecordColumn(expanded, "FromAccount", {"value", "name"}, {"FromAccountId", "FromAccountName"}),
+    expanded_to = Table.ExpandRecordColumn(expanded_from, "ToAccount", {"value", "name"}, {"ToAccountId", "ToAccountName"}),
+    
+    typed = Table.TransformColumnTypes(expanded_to, {{"Date", type date}, {"Amount", type number}})
+in
+    typed
+
+
+// ================================================================================
+// QUERY 19: JOURNAL ENTRY
+// ================================================================================
+// Query Name: JournalEntry
+// Description: Manual accounting entries
+// Dependencies: GetAccessToken
+// Key Fields: JournalEntryId, Date, Amount, Description
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    query = "select * from JournalEntry where TxnDate >= '2024-01-01' MAXRESULTS 1000",
+    full_url = base_url & realm_id & "/query?query=" & Uri.EscapeDataString(query),
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    query_response = json[QueryResponse],
+    data = try query_response[JournalEntry] otherwise {},
+    
+    table = Table.FromList(data, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
+    
+    expanded = Table.ExpandRecordColumn(table, "Column1",
+        {"Id", "TxnDate", "TotalAmt", "PrivateNote", "DocNumber", "Adjustment"},
+        {"JournalEntryId", "Date", "Amount", "Description", "DocNumber", "IsAdjustment"}
+    ),
+    
+    typed = Table.TransformColumnTypes(expanded, {{"Date", type date}, {"Amount", type number}, {"IsAdjustment", type logical}})
+in
+    typed
+
+
+// ================================================================================
+// QUERY 20: COMPANY INFO
+// ================================================================================
+// Query Name: CompanyInfo
+// Description: Company details and settings
+// Dependencies: GetAccessToken
+// Returns: Two-column table with Name/Value pairs
+
+let
+    realm_id = "YOUR_REALM_ID_HERE",
+    access_token = GetAccessToken,
+    base_url = "https://sandbox-quickbooks.api.intuit.com/v3/company/",
+    
+    full_url = base_url & realm_id & "/companyinfo/" & realm_id,
+    
+    response = Web.Contents(full_url, [Headers = [#"Authorization" = "Bearer " & access_token, #"Accept" = "application/json"]]),
+    json = Json.Document(response),
+    company_info = json[CompanyInfo],
+    
+    // Convert record to table for easy viewing
+    table = Record.ToTable(company_info)
+in
+    table
+
+
+// ================================================================================
+// BONUS QUERY: PAGINATED DATA LOADER (For entities with >1000 records)
+// ================================================================================
+// Query Name: GetQBDataPaginated
+// Description: Function to handle pagination for large datasets
+// Usage: Invoke this function with entity name when you have >1000 records
+
+let
+    GetQBDataPaginated = (entity as text, realmId as text, access_token as text, base_url as text) =>
+    let
+        // Function to get a single page
+        GetPage = (startPosition as number) =>
+        let
+            query = "select * from " & entity & " STARTPOSITION " & 
+                    Number.ToText(startPosition) & " MAXRESULTS 1000",
+            full_url = base_url & realmId & "/query?query=" & Uri.EscapeDataString(query),
+            
+            response = Web.Contents(
+                full_url,
+                [
+                    Headers = [
+                        #"Authorization" = "Bearer " & access_token,
+                        #"Accept" = "application/json"
+                    ]
+                ]
+            ),
+            
+            json = Json.Document(response),
+            query_response = json[QueryResponse],
+            entity_data = try Record.Field(query_response, entity) otherwise null
+        in
+            entity_data,
+        
+        // Get first page
+        first_page = GetPage(1),
+        
+        // Check if we need more pages
+        continue = first_page <> null and List.Count(first_page) = 1000,
+        
+        // Recursively get all pages
+        GetAllPages = (position as number, accumulated as list) =>
+        let
+            current_page = GetPage(position),
+            new_accumulated = if current_page = null then accumulated 
+                            else List.Combine({accumulated, current_page}),
+            has_more = current_page <> null and List.Count(current_page) = 1000,
+            result = if has_more then @GetAllPages(position + 1000, new_accumulated)
+                    else new_accumulated
+        in
+            result,
+        
+        // Get all data
+        all_data = if continue then GetAllPages(1, {}) else first_page,
+        
+        // Convert to table
+        table = if all_data = null or all_data = {} then
+                    #table({"Column1"}, {})
+                else
+                    Table.FromList(all_data, Splitter.SplitByNothing(), null, null, ExtraValues.Error)
+    in
+        table
+in
+    GetQBDataPaginated
+
+
+// ================================================================================
+// IMPLEMENTATION NOTES
+// ================================================================================
+
+/*
+STEP-BY-STEP SETUP:
+1. Create GetAccessToken query first
+2. Fill in your credentials (Client ID, Secret, Refresh Token)
+3. Test GetAccessToken - should return a long string starting with "eyJ"
+4. Create queries for the entities you need
+5. Replace YOUR_REALM_ID_HERE in each query
+6. Change base_url when moving from sandbox to production
+7. Set privacy levels (File → Options → Privacy → Always ignore)
+
+DATE FILTERS:
+- All transaction queries include: where TxnDate >= '2024-01-01'
+- Adjust this date based on your needs
+- Remove the filter if you want all historical data
+
+PERFORMANCE:
+- Start with core entities (Invoice, Purchase, Payment, Customer, Account)
+- Add others as needed
+- Some entities may be empty if not used by the company
+- Use pagination function for entities with >1000 records
+
+RELATIONSHIPS IN POWER BI:
+Create these relationships after loading data:
+- Invoice[CustomerId] → Customer[CustomerId]
+- Payment[CustomerId] → Customer[CustomerId]
+- Purchase[VendorId] → Vendor[VendorId]
+- Bill[VendorId] → Vendor[VendorId]
+- Invoice[AccountId] → Account[AccountId]
+- Purchase[AccountId] → Account[AccountId]
+
+TROUBLESHOOTING:
+- "401 Unauthorized" → Refresh token expired, get new tokens
+- "Formula.Firewall" → Disable privacy checks
+- "DataSource.Error" → Check Realm ID and base_url
+- Empty results → Entity might not exist in this QB company
+- Slow refresh → Add date filters or use pagination
+
+SWITCHING TO PRODUCTION:
+1. Get production tokens from OAuth Playground
+2. Update refresh_token in GetAccessToken
+3. Update realm_id in all queries
+4. Change all base_url from sandbox to production:
+   FROM: "https://sandbox-quickbooks.api.intuit.com/v3/company/"
+   TO: "https://quickbooks.api.intuit.com/v3/company/"
+
+GITHUB REPOSITORY SUGGESTED STRUCTURE:
+/quickbooks-powerbi
+  /queries
+    README.md (this file with instructions)
+    00_GetAccessToken.pq
+    01_Invoice.pq
+    02_Purchase.pq
+    ... etc
+  /documentation
+    oauth-setup-guide.md
+    production-deployment.md
+    troubleshooting.md
+  /examples
+    sample-dashboard.pbix
+    example-measures.txt
+
+For questions or contributions, see GitHub repository.
+*/
