@@ -830,10 +830,10 @@ CALCULATE(
 
 // 💰 Insurance revenue
 HC - Insurance Revenue = 
-VAR Total = SUM(Invoice[TotalAmount])
-VAR Medicare = CALCULATE(SUM(InvoiceLineItems[Amount]), FILTER(Item, CONTAINSSTRING(Item[Name], "Medicare")))
-VAR Medicaid = CALCULATE(SUM(InvoiceLineItems[Amount]), FILTER(Item, CONTAINSSTRING(Item[Name], "Medicaid")))
-VAR Private = CALCULATE(SUM(InvoiceLineItems[Amount]), FILTER(Item, CONTAINSSTRING(Item[Name], "Private")))
+VAR Total = SUM(Invoices[TotalAmount])
+VAR Medicare = CALCULATE(SUM('Invoice Line Items'[Amount]), FILTER('Invoice Line Items', CONTAINSSTRING('Invoice Line Items'[ItemName], "Medicare")))
+VAR Medicaid = CALCULATE(SUM('Invoice Line Items'[Amount]), FILTER('Invoice Line Items', CONTAINSSTRING('Invoice Line Items'[ItemName], "Medicaid")))
+VAR Private = CALCULATE(SUM('Invoice Line Items'[Amount]), FILTER('Invoice Line Items', CONTAINSSTRING('Invoice Line Items'[ItemName], "Private")))
 RETURN Total - Medicare - Medicaid - Private
 // Format: Currency, 0 decimals
 
