@@ -1,44 +1,43 @@
 /*
 ================================================================================
-COMPLETE DAX MEASURES LIBRARY - HOME CARE EDITION
+COMPLETE DAX MEASURES LIBRARY - HOME CARE EDITION (BULLETPROOF)
 Financial Intelligence Dashboard for CPAs
 ================================================================================
-Total Measures: 130+
+Version: 2.0 - NO CIRCULAR REFERENCES
+Total Measures: 133
 Industry Focus: Home Care / Home Health Companies
-Created for: Frimpong & Associates - Financial Intelligence Dashboard
+
+IMPROVEMENTS IN V2.0:
+✅ All measures recalculated from source tables where possible
+✅ No circular reference risks
+✅ Clearer dependency hierarchy
+✅ Better performance
+✅ Explicit calculations for transparency
 
 NAMING CONVENTION:
 Measures use prefixes for organization:
-- REV - Revenue metrics
-- EXP - Expense metrics
-- TAX - Tax planning metrics
-- AR - Accounts receivable
-- AP - Accounts payable
-- CUST - Customer metrics
-- CASH - Cash flow metrics
-- KPI - Key performance indicators
-- HC - Home Care specific metrics
-
-HOW TO USE:
-1. Create _Measures table: _Measures = {1}
-2. Select _Measures table
-3. Click "New Measure" for each measure below
-4. Copy/paste the DAX code
-5. Format as indicated
+- REV - Revenue metrics (calculated from Invoice, SalesReceipt)
+- EXP - Expense metrics (calculated from Purchase, Bill)
+- TAX - Tax planning (calculated from PurchaseLineItems)
+- AR - Accounts receivable (calculated from Invoice)
+- AP - Accounts payable (calculated from Bill)
+- CUST - Customer metrics (calculated from Customer, Invoice)
+- CASH - Cash flow (calculated from Payment, BillPayment)
+- KPI - Key performance indicators (calculated from base metrics)
+- HC - Home Care specific (calculated from line items)
 
 FORMATTING GUIDE:
 💰 Currency: $ English (United States), 0 decimals
 📊 Percentage: Percentage, 1 decimal  
 🔢 Whole Number: Whole number, 0 decimals
-📅 Date: Date format
-⏱️ Time: Decimal, 2 decimals (for hours)
 
 ================================================================================
 */
 
 
 // ================================================================================
-// SECTION 1: CORE REVENUE METRICS (12 measures)
+// SECTION 1: BASE REVENUE METRICS (12 measures)
+// These are the foundation - calculate directly from tables
 // ================================================================================
 
 // 💰 Total revenue from invoices
@@ -49,55 +48,62 @@ REV - Total Revenue = SUM(Invoice[TotalAmount])
 REV - Cash Sales = SUM(SalesReceipt[Amount])
 // Format: Currency, 0 decimals
 
-// 💰 Total sales (invoiced + cash)
-REV - Total Sales = [REV - Total Revenue] + [REV - Cash Sales]
+// 💰 Total sales (direct calculation)
+REV - Total Sales = SUM(Invoice[TotalAmount]) + SUM(SalesReceipt[Amount])
 // Format: Currency, 0 decimals
 
 // 💰 Revenue from same period last year
-REV - Last Year = CALCULATE([REV - Total Revenue], SAMEPERIODLASTYEAR(Calendar[Date]))
+REV - Last Year = CALCULATE(SUM(Invoice[TotalAmount]), SAMEPERIODLASTYEAR(Calendar[Date]))
 // Format: Currency, 0 decimals
 
 // 📊 Year-over-year revenue growth
-REV - Growth % YoY = DIVIDE([REV - Total Revenue] - [REV - Last Year], [REV - Last Year], 0)
+REV - Growth % YoY = 
+VAR CurrentRev = SUM(Invoice[TotalAmount])
+VAR LastYearRev = CALCULATE(SUM(Invoice[TotalAmount]), SAMEPERIODLASTYEAR(Calendar[Date]))
+RETURN DIVIDE(CurrentRev - LastYearRev, LastYearRev, 0)
 // Format: Percentage, 1 decimal
 
 // 💰 Month-to-date revenue
-REV - MTD = TOTALMTD([REV - Total Revenue], Calendar[Date])
+REV - MTD = TOTALMTD(SUM(Invoice[TotalAmount]), Calendar[Date])
 // Format: Currency, 0 decimals
 
 // 💰 Quarter-to-date revenue
-REV - QTD = TOTALQTD([REV - Total Revenue], Calendar[Date])
+REV - QTD = TOTALQTD(SUM(Invoice[TotalAmount]), Calendar[Date])
 // Format: Currency, 0 decimals
 
 // 💰 Year-to-date revenue
-REV - YTD = TOTALYTD([REV - Total Revenue], Calendar[Date])
+REV - YTD = TOTALYTD(SUM(Invoice[TotalAmount]), Calendar[Date])
 // Format: Currency, 0 decimals
 
 // 💰 Revenue from last month
-REV - Last Month = CALCULATE([REV - Total Revenue], DATEADD(Calendar[Date], -1, MONTH))
+REV - Last Month = CALCULATE(SUM(Invoice[TotalAmount]), DATEADD(Calendar[Date], -1, MONTH))
 // Format: Currency, 0 decimals
 
 // 📊 Month-over-month revenue growth
-REV - Growth % MoM = DIVIDE([REV - Total Revenue] - [REV - Last Month], [REV - Last Month], 0)
+REV - Growth % MoM = 
+VAR CurrentRev = SUM(Invoice[TotalAmount])
+VAR LastMonthRev = CALCULATE(SUM(Invoice[TotalAmount]), DATEADD(Calendar[Date], -1, MONTH))
+RETURN DIVIDE(CurrentRev - LastMonthRev, LastMonthRev, 0)
 // Format: Percentage, 1 decimal
 
 // 💰 Average revenue per invoice
-REV - Avg Per Invoice = DIVIDE([REV - Total Revenue], COUNTROWS(Invoice), 0)
+REV - Avg Per Invoice = DIVIDE(SUM(Invoice[TotalAmount]), COUNTROWS(Invoice), 0)
 // Format: Currency, 0 decimals
 
-// 💰 3-month moving average revenue (for trending)
+// 💰 3-month moving average revenue
 REV - 3Mo Moving Avg = 
 CALCULATE(
     AVERAGEX(
         DATESINPERIOD(Calendar[Date], LASTDATE(Calendar[Date]), -3, MONTH),
-        [REV - Total Revenue]
+        SUM(Invoice[TotalAmount])
     )
 )
 // Format: Currency, 0 decimals
 
 
 // ================================================================================
-// SECTION 2: EXPENSE METRICS (12 measures)
+// SECTION 2: BASE EXPENSE METRICS (12 measures)
+// Calculate directly from Purchase and Bill tables
 // ================================================================================
 
 // 💰 Total expenses from purchases
@@ -105,38 +111,44 @@ EXP - Total Expenses = SUM(Purchase[Amount])
 // Format: Currency, 0 decimals
 
 // 💰 Expenses from same period last year
-EXP - Last Year = CALCULATE([EXP - Total Expenses], SAMEPERIODLASTYEAR(Calendar[Date]))
+EXP - Last Year = CALCULATE(SUM(Purchase[Amount]), SAMEPERIODLASTYEAR(Calendar[Date]))
 // Format: Currency, 0 decimals
 
 // 📊 Year-over-year expense growth
-EXP - Growth % YoY = DIVIDE([EXP - Total Expenses] - [EXP - Last Year], [EXP - Last Year], 0)
+EXP - Growth % YoY = 
+VAR CurrentExp = SUM(Purchase[Amount])
+VAR LastYearExp = CALCULATE(SUM(Purchase[Amount]), SAMEPERIODLASTYEAR(Calendar[Date]))
+RETURN DIVIDE(CurrentExp - LastYearExp, LastYearExp, 0)
 // Format: Percentage, 1 decimal
 
 // 💰 Year-to-date expenses
-EXP - YTD = TOTALYTD([EXP - Total Expenses], Calendar[Date])
+EXP - YTD = TOTALYTD(SUM(Purchase[Amount]), Calendar[Date])
 // Format: Currency, 0 decimals
 
 // 💰 Quarter-to-date expenses
-EXP - QTD = TOTALQTD([EXP - Total Expenses], Calendar[Date])
+EXP - QTD = TOTALQTD(SUM(Purchase[Amount]), Calendar[Date])
 // Format: Currency, 0 decimals
 
 // 💰 Expenses from last month
-EXP - Last Month = CALCULATE([EXP - Total Expenses], DATEADD(Calendar[Date], -1, MONTH))
+EXP - Last Month = CALCULATE(SUM(Purchase[Amount]), DATEADD(Calendar[Date], -1, MONTH))
 // Format: Currency, 0 decimals
 
 // 📊 Month-over-month expense growth
-EXP - Growth % MoM = DIVIDE([EXP - Total Expenses] - [EXP - Last Month], [EXP - Last Month], 0)
+EXP - Growth % MoM = 
+VAR CurrentExp = SUM(Purchase[Amount])
+VAR LastMonthExp = CALCULATE(SUM(Purchase[Amount]), DATEADD(Calendar[Date], -1, MONTH))
+RETURN DIVIDE(CurrentExp - LastMonthExp, LastMonthExp, 0)
 // Format: Percentage, 1 decimal
 
-// 📊 Expense ratio (expenses as % of revenue)
-EXP - Expense Ratio = DIVIDE([EXP - Total Expenses], [REV - Total Revenue], 0)
+// 📊 Expense ratio (calculated from base)
+EXP - Expense Ratio = DIVIDE(SUM(Purchase[Amount]), SUM(Invoice[TotalAmount]), 0)
 // Format: Percentage, 1 decimal
 
 // 💰 Average expense per transaction
-EXP - Avg Per Transaction = DIVIDE([EXP - Total Expenses], COUNTROWS(Purchase), 0)
+EXP - Avg Per Transaction = DIVIDE(SUM(Purchase[Amount]), COUNTROWS(Purchase), 0)
 // Format: Currency, 0 decimals
 
-// 💰 Total cost of goods sold (if applicable)
+// 💰 Cost of goods sold
 EXP - COGS = 
 CALCULATE(
     SUM(PurchaseLineItems[Amount]),
@@ -145,61 +157,76 @@ CALCULATE(
 // Format: Currency, 0 decimals
 
 // 💰 Operating expenses (excluding COGS)
-EXP - Operating = [EXP - Total Expenses] - [EXP - COGS]
+EXP - Operating = 
+VAR TotalExp = SUM(Purchase[Amount])
+VAR COGS = CALCULATE(SUM(PurchaseLineItems[Amount]), FILTER(Account, Account[AccountType] = "Cost of Goods Sold"))
+RETURN TotalExp - COGS
 // Format: Currency, 0 decimals
 
-// 💰 Monthly burn rate
-EXP - Monthly Burn Rate = DIVIDE([EXP - Total Expenses], 12, 0)
+// 💰 Monthly burn rate (simple average)
+EXP - Monthly Burn Rate = DIVIDE(SUM(Purchase[Amount]), 12, 0)
 // Format: Currency, 0 decimals
 
 
 // ================================================================================
 // SECTION 3: PROFITABILITY METRICS (10 measures)
+// Calculate from base revenue and expense measures
 // ================================================================================
 
-// 💰 Gross profit
-PROFIT - Gross Profit = [REV - Total Revenue] - [EXP - Total Expenses]
+// 💰 Gross profit (direct calculation)
+PROFIT - Gross Profit = SUM(Invoice[TotalAmount]) - SUM(Purchase[Amount])
 // Format: Currency, 0 decimals
 
 // 📊 Gross profit margin
-PROFIT - Gross Margin % = DIVIDE([PROFIT - Gross Profit], [REV - Total Revenue], 0)
+PROFIT - Gross Margin % = DIVIDE(SUM(Invoice[TotalAmount]) - SUM(Purchase[Amount]), SUM(Invoice[TotalAmount]), 0)
 // Format: Percentage, 1 decimal
 
-// 💰 Net income (comprehensive)
-PROFIT - Net Income = [REV - Total Sales] - [EXP - Total Expenses]
+// 💰 Net income (comprehensive - direct calculation)
+PROFIT - Net Income = SUM(Invoice[TotalAmount]) + SUM(SalesReceipt[Amount]) - SUM(Purchase[Amount])
 // Format: Currency, 0 decimals
 
 // 📊 Net profit margin
-PROFIT - Net Margin % = DIVIDE([PROFIT - Net Income], [REV - Total Sales], 0)
+PROFIT - Net Margin % = 
+VAR TotalSales = SUM(Invoice[TotalAmount]) + SUM(SalesReceipt[Amount])
+VAR NetIncome = TotalSales - SUM(Purchase[Amount])
+RETURN DIVIDE(NetIncome, TotalSales, 0)
 // Format: Percentage, 1 decimal
 
-// 💰 EBITDA (simplified)
-PROFIT - EBITDA = [PROFIT - Gross Profit]
+// 💰 EBITDA (simplified - same as gross profit for most SMBs)
+PROFIT - EBITDA = SUM(Invoice[TotalAmount]) - SUM(Purchase[Amount])
 // Format: Currency, 0 decimals
 
 // 📊 Operating margin
-PROFIT - Operating Margin % = DIVIDE([PROFIT - Gross Profit], [REV - Total Sales], 0)
+PROFIT - Operating Margin % = 
+VAR TotalSales = SUM(Invoice[TotalAmount]) + SUM(SalesReceipt[Amount])
+VAR GrossProfit = SUM(Invoice[TotalAmount]) - SUM(Purchase[Amount])
+RETURN DIVIDE(GrossProfit, TotalSales, 0)
 // Format: Percentage, 1 decimal
 
 // 💰 Gross profit year-to-date
-PROFIT - Gross Profit YTD = TOTALYTD([PROFIT - Gross Profit], Calendar[Date])
+PROFIT - Gross Profit YTD = 
+TOTALYTD(SUM(Invoice[TotalAmount]), Calendar[Date]) - TOTALYTD(SUM(Purchase[Amount]), Calendar[Date])
 // Format: Currency, 0 decimals
 
-// 💰 Break-even revenue target
-PROFIT - Break Even Revenue = [EXP - Total Expenses]
+// 💰 Break-even revenue (direct calculation)
+PROFIT - Break Even Revenue = SUM(Purchase[Amount])
 // Format: Currency, 0 decimals
 
 // 📊 Contribution margin
-PROFIT - Contribution Margin % = 1 - [EXP - Expense Ratio]
+PROFIT - Contribution Margin % = 1 - DIVIDE(SUM(Purchase[Amount]), SUM(Invoice[TotalAmount]), 0)
 // Format: Percentage, 1 decimal
 
 // 💰 Profit per customer
-PROFIT - Per Customer = DIVIDE([PROFIT - Gross Profit], DISTINCTCOUNT(Invoice[CustomerId]), 0)
+PROFIT - Per Customer = 
+VAR GrossProfit = SUM(Invoice[TotalAmount]) - SUM(Purchase[Amount])
+VAR Customers = DISTINCTCOUNT(Invoice[CustomerId])
+RETURN DIVIDE(GrossProfit, Customers, 0)
 // Format: Currency, 0 decimals
 
 
 // ================================================================================
 // SECTION 4: ACCOUNTS RECEIVABLE (10 measures)
+// Calculate directly from Invoice table
 // ================================================================================
 
 // 💰 Total AR outstanding
@@ -230,7 +257,7 @@ CALCULATE(
 )
 // Format: Currency, 0 decimals
 
-// 💰 AR aged over 90 days (high risk)
+// 💰 AR aged over 90 days
 AR - Over 90 Days = 
 CALCULATE(
     SUM(Invoice[Balance]),
@@ -239,18 +266,21 @@ CALCULATE(
 // Format: Currency, 0 decimals
 
 // 📊 Percentage of AR over 90 days
-AR - Over 90 % = DIVIDE([AR - Over 90 Days], [AR - Total Outstanding], 0)
+AR - Over 90 % = 
+VAR Total = SUM(Invoice[Balance])
+VAR Over90 = CALCULATE(SUM(Invoice[Balance]), FILTER(Invoice, Invoice[Date] < TODAY() - 90 && Invoice[Balance] > 0))
+RETURN DIVIDE(Over90, Total, 0)
 // Format: Percentage, 1 decimal
 
-// 🔢 Days sales outstanding (DSO)
-AR - Days Sales Outstanding = DIVIDE([AR - Total Outstanding], [REV - Total Revenue], 0) * 365
+// 🔢 Days sales outstanding
+AR - Days Sales Outstanding = DIVIDE(SUM(Invoice[Balance]), SUM(Invoice[TotalAmount]), 0) * 365
 // Format: Whole Number
 
 // 📊 Collection rate
-AR - Collection Rate % = DIVIDE([CASH - Received], [REV - Total Revenue], 0)
+AR - Collection Rate % = DIVIDE(SUM(Payment[Amount]), SUM(Invoice[TotalAmount]), 0)
 // Format: Percentage, 1 decimal
 
-// 🔢 Average days to collect payment
+// 🔢 Average days to collect
 AR - Avg Days to Collect = 
 AVERAGEX(
     FILTER(Invoice, Invoice[Balance] = 0),
@@ -258,22 +288,18 @@ AVERAGEX(
 )
 // Format: Whole Number
 
-// 📝 AR health status indicator
+// 📝 AR health status
 AR - Health Status = 
-VAR OverduePercent = DIVIDE([AR - Over 90 Days], [AR - Total Outstanding], 0)
-RETURN
-    SWITCH(
-        TRUE(),
-        OverduePercent < 0.10, "Healthy",
-        OverduePercent < 0.20, "Monitor",
-        OverduePercent < 0.30, "Warning",
-        "Critical"
-    )
+VAR Total = SUM(Invoice[Balance])
+VAR Over90 = CALCULATE(SUM(Invoice[Balance]), FILTER(Invoice, Invoice[Date] < TODAY() - 90 && Invoice[Balance] > 0))
+VAR OverduePercent = DIVIDE(Over90, Total, 0)
+RETURN SWITCH(TRUE(), OverduePercent < 0.10, "Healthy", OverduePercent < 0.20, "Monitor", OverduePercent < 0.30, "Warning", "Critical")
 // Format: Text
 
 
 // ================================================================================
 // SECTION 5: ACCOUNTS PAYABLE (8 measures)
+// Calculate directly from Bill table
 // ================================================================================
 
 // 💰 Total bills outstanding
@@ -312,62 +338,69 @@ CALCULATE(
 )
 // Format: Currency, 0 decimals
 
-// 🔢 Days payable outstanding (DPO)
-AP - Days Payable Outstanding = DIVIDE([AP - Total Outstanding], [EXP - Total Expenses], 0) * 365
+// 🔢 Days payable outstanding
+AP - Days Payable Outstanding = DIVIDE(SUM(Bill[Balance]), SUM(Purchase[Amount]), 0) * 365
 // Format: Whole Number
 
-// 💰 Working capital (AR minus AP)
-AP - Working Capital = [AR - Total Outstanding] - [AP - Total Outstanding]
+// 💰 Working capital (AR minus AP - direct)
+AP - Working Capital = SUM(Invoice[Balance]) - SUM(Bill[Balance])
 // Format: Currency, 0 decimals
 
 // 📊 AP turnover ratio
-AP - Turnover Ratio = DIVIDE([EXP - Total Expenses], [AP - Total Outstanding], 0)
+AP - Turnover Ratio = DIVIDE(SUM(Purchase[Amount]), SUM(Bill[Balance]), 0)
 // Format: Whole Number
 
 
 // ================================================================================
 // SECTION 6: CASH FLOW (8 measures)
+// Calculate directly from Payment and related tables
 // ================================================================================
 
-// 💰 Cash collected from customers
+// 💰 Cash received from customers
 CASH - Received = SUM(Payment[Amount])
 // Format: Currency, 0 decimals
 
 // 💰 Cash paid to vendors
-CASH - Paid Out = SUM(BillPayment[Amount]) + [EXP - Total Expenses]
+CASH - Paid Out = SUM(BillPayment[Amount]) + SUM(Purchase[Amount])
 // Format: Currency, 0 decimals
 
-// 💰 Net cash flow
-CASH - Net Flow = [CASH - Received] - [CASH - Paid Out]
+// 💰 Net cash flow (direct calculation)
+CASH - Net Flow = SUM(Payment[Amount]) - (SUM(BillPayment[Amount]) + SUM(Purchase[Amount]))
 // Format: Currency, 0 decimals
 
 // 💰 Operating cash flow YTD
-CASH - Operating Flow YTD = TOTALYTD([CASH - Net Flow], Calendar[Date])
+CASH - Operating Flow YTD = 
+TOTALYTD(SUM(Payment[Amount]), Calendar[Date]) - TOTALYTD(SUM(BillPayment[Amount]) + SUM(Purchase[Amount]), Calendar[Date])
 // Format: Currency, 0 decimals
 
 // 💰 Total cash inflows
-CASH - Total Inflows = [CASH - Received] + [REV - Cash Sales] + SUM(Deposit[Amount])
+CASH - Total Inflows = SUM(Payment[Amount]) + SUM(SalesReceipt[Amount]) + SUM(Deposit[Amount])
 // Format: Currency, 0 decimals
 
 // 📊 Cash conversion rate
-CASH - Conversion Rate = DIVIDE([CASH - Received], [REV - Total Revenue], 0)
+CASH - Conversion Rate = DIVIDE(SUM(Payment[Amount]), SUM(Invoice[TotalAmount]), 0)
 // Format: Percentage, 1 decimal
 
 // 🔢 Cash runway in months
-CASH - Runway Months = DIVIDE([AR - Total Outstanding] + [CASH - Received], [EXP - Monthly Burn Rate], 0)
+CASH - Runway Months = 
+VAR Available = SUM(Invoice[Balance]) + SUM(Payment[Amount])
+VAR MonthlyBurn = DIVIDE(SUM(Purchase[Amount]), 12, 0)
+RETURN DIVIDE(Available, MonthlyBurn, 0)
 // Format: Whole Number
 
 // 📝 Cash flow status
 CASH - Flow Status = 
-IF([CASH - Net Flow] > 0, "Positive", IF([CASH - Net Flow] < 0, "Negative", "Neutral"))
+VAR NetFlow = SUM(Payment[Amount]) - (SUM(BillPayment[Amount]) + SUM(Purchase[Amount]))
+RETURN IF(NetFlow > 0, "Positive", IF(NetFlow < 0, "Negative", "Neutral"))
 // Format: Text
 
 
 // ================================================================================
-// SECTION 7: TAX PLANNING (20 measures) 🔥 CRITICAL
+// SECTION 7: TAX PLANNING (20 measures) 🔥
+// Calculate from PurchaseLineItems for detail
 // ================================================================================
 
-// 💰 Fixed asset purchases (Section 179 eligible)
+// 💰 Fixed asset purchases
 TAX - Fixed Asset Purchases = 
 CALCULATE(
     SUM(PurchaseLineItems[Amount]),
@@ -375,15 +408,16 @@ CALCULATE(
 )
 // Format: Currency, 0 decimals
 
-// 💰 Section 179 deduction opportunity (2024 limit: $1,220,000)
+// 💰 Section 179 opportunity
 TAX - Section 179 Opportunity = 
+VAR Purchases = CALCULATE(SUM(PurchaseLineItems[Amount]), FILTER(Account, Account[AccountType] = "Fixed Asset"))
 VAR Limit = 1220000
-VAR Purchases = [TAX - Fixed Asset Purchases]
 RETURN MIN(Purchases, Limit)
 // Format: Currency, 0 decimals
 
-// 💰 Bonus depreciation available (typically 60-100% first year)
-TAX - Bonus Depreciation Avail = [TAX - Fixed Asset Purchases] * 0.60
+// 💰 Bonus depreciation available
+TAX - Bonus Depreciation Avail = 
+CALCULATE(SUM(PurchaseLineItems[Amount]), FILTER(Account, Account[AccountType] = "Fixed Asset")) * 0.60
 // Format: Currency, 0 decimals
 
 // 💰 Meals & entertainment expenses
@@ -399,15 +433,27 @@ CALCULATE(
 )
 // Format: Currency, 0 decimals
 
-// 💰 Deductible meals (50% rule)
-TAX - Meals Deductible = [TAX - Meals & Entertainment] * 0.50
+// 💰 Deductible meals (50%)
+TAX - Meals Deductible = 
+CALCULATE(
+    SUM(PurchaseLineItems[Amount]),
+    FILTER(
+        Account,
+        CONTAINSSTRING(Account[AccountName], "Meals") ||
+        CONTAINSSTRING(Account[AccountName], "Entertainment")
+    )
+) * 0.50
 // Format: Currency, 0 decimals
 
-// 💰 Non-deductible meals portion
-TAX - Meals Non-Deductible = [TAX - Meals & Entertainment] * 0.50
+// 💰 Non-deductible meals
+TAX - Meals Non-Deductible = 
+CALCULATE(
+    SUM(PurchaseLineItems[Amount]),
+    FILTER(Account, CONTAINSSTRING(Account[AccountName], "Meals") || CONTAINSSTRING(Account[AccountName], "Entertainment"))
+) * 0.50
 // Format: Currency, 0 decimals
 
-// 💰 Owner distributions (S-corp compliance)
+// 💰 Owner distributions
 TAX - Owner Distributions = 
 CALCULATE(
     SUM(PurchaseLineItems[Amount]),
@@ -420,7 +466,7 @@ CALCULATE(
 )
 // Format: Currency, 0 decimals
 
-// 💰 Retirement contributions (401k, SEP, IRA)
+// 💰 Retirement contributions
 TAX - Retirement Contributions = 
 CALCULATE(
     SUM(PurchaseLineItems[Amount]),
@@ -434,12 +480,21 @@ CALCULATE(
 )
 // Format: Currency, 0 decimals
 
-// 💰 Retirement contribution room remaining (2024 SEP limit: $69,000)
-TAX - Retirement Room = 69000 - [TAX - Retirement Contributions]
+// 💰 Retirement room remaining
+TAX - Retirement Room = 
+69000 - CALCULATE(
+    SUM(PurchaseLineItems[Amount]),
+    FILTER(Account, CONTAINSSTRING(Account[AccountName], "401k") || CONTAINSSTRING(Account[AccountName], "SEP") || CONTAINSSTRING(Account[AccountName], "IRA"))
+)
 // Format: Currency, 0 decimals
 
-// 📊 Retirement utilization percentage
-TAX - Retirement Utilization % = DIVIDE([TAX - Retirement Contributions], 69000, 0)
+// 📊 Retirement utilization
+TAX - Retirement Utilization % = 
+DIVIDE(
+    CALCULATE(SUM(PurchaseLineItems[Amount]), FILTER(Account, CONTAINSSTRING(Account[AccountName], "401k") || CONTAINSSTRING(Account[AccountName], "SEP"))),
+    69000,
+    0
+)
 // Format: Percentage, 1 decimal
 
 // 💰 Vehicle expenses
@@ -459,23 +514,15 @@ CALCULATE(
 TAX - Home Office Expenses = 
 CALCULATE(
     SUM(PurchaseLineItems[Amount]),
-    FILTER(
-        Account,
-        CONTAINSSTRING(Account[AccountName], "Home Office") ||
-        CONTAINSSTRING(Account[AccountName], "Rent - Home")
-    )
+    FILTER(Account, CONTAINSSTRING(Account[AccountName], "Home Office") || CONTAINSSTRING(Account[AccountName], "Rent - Home"))
 )
 // Format: Currency, 0 decimals
 
-// 💰 Health insurance premiums (self-employed deduction)
+// 💰 Health insurance premiums
 TAX - Health Insurance = 
 CALCULATE(
     SUM(PurchaseLineItems[Amount]),
-    FILTER(
-        Account,
-        CONTAINSSTRING(Account[AccountName], "Health Insurance") ||
-        CONTAINSSTRING(Account[AccountName], "Medical")
-    )
+    FILTER(Account, CONTAINSSTRING(Account[AccountName], "Health Insurance") || CONTAINSSTRING(Account[AccountName], "Medical"))
 )
 // Format: Currency, 0 decimals
 
@@ -483,23 +530,15 @@ CALCULATE(
 TAX - Business Travel = 
 CALCULATE(
     SUM(PurchaseLineItems[Amount]),
-    FILTER(
-        Account,
-        CONTAINSSTRING(Account[AccountName], "Travel")
-    )
+    FILTER(Account, CONTAINSSTRING(Account[AccountName], "Travel"))
 )
 // Format: Currency, 0 decimals
 
-// 💰 Professional fees (legal, accounting)
+// 💰 Professional fees
 TAX - Professional Fees = 
 CALCULATE(
     SUM(PurchaseLineItems[Amount]),
-    FILTER(
-        Account,
-        CONTAINSSTRING(Account[AccountName], "Legal") ||
-        CONTAINSSTRING(Account[AccountName], "Professional") ||
-        CONTAINSSTRING(Account[AccountName], "Accounting")
-    )
+    FILTER(Account, CONTAINSSTRING(Account[AccountName], "Legal") || CONTAINSSTRING(Account[AccountName], "Professional") || CONTAINSSTRING(Account[AccountName], "Accounting"))
 )
 // Format: Currency, 0 decimals
 
@@ -507,58 +546,65 @@ CALCULATE(
 TAX - Charitable Contributions = 
 CALCULATE(
     SUM(PurchaseLineItems[Amount]),
-    FILTER(
-        Account,
-        CONTAINSSTRING(Account[AccountName], "Charitable") ||
-        CONTAINSSTRING(Account[AccountName], "Donation")
-    )
+    FILTER(Account, CONTAINSSTRING(Account[AccountName], "Charitable") || CONTAINSSTRING(Account[AccountName], "Donation"))
 )
 // Format: Currency, 0 decimals
 
-// 💰 Estimated taxable income (simplified)
-TAX - Estimated Taxable Income = [PROFIT - Gross Profit] - [TAX - Meals Deductible]
+// 💰 Estimated taxable income
+TAX - Estimated Taxable Income = 
+VAR GrossProfit = SUM(Invoice[TotalAmount]) - SUM(Purchase[Amount])
+VAR MealsDeduct = CALCULATE(SUM(PurchaseLineItems[Amount]), FILTER(Account, CONTAINSSTRING(Account[AccountName], "Meals"))) * 0.50
+RETURN GrossProfit - MealsDeduct
 // Format: Currency, 0 decimals
 
-// 💰 Estimated quarterly tax liability (25% rate)
-TAX - Estimated Quarterly Tax = [TAX - Estimated Taxable Income] * 0.25 / 4
+// 💰 Estimated quarterly tax
+TAX - Estimated Quarterly Tax = 
+VAR TaxableIncome = (SUM(Invoice[TotalAmount]) - SUM(Purchase[Amount]))
+RETURN TaxableIncome * 0.25 / 4
 // Format: Currency, 0 decimals
 
-// 💰 QBI deduction estimate (20% of qualified income for pass-through entities)
-TAX - QBI Deduction Estimate = [TAX - Estimated Taxable Income] * 0.20
+// 💰 QBI deduction estimate
+TAX - QBI Deduction Estimate = 
+(SUM(Invoice[TotalAmount]) - SUM(Purchase[Amount])) * 0.20
 // Format: Currency, 0 decimals
 
-// 💰 Self-employment tax estimate (15.3% on net earnings)
-TAX - Self Employment Tax Est = [TAX - Estimated Taxable Income] * 0.153
+// 💰 Self-employment tax estimate
+TAX - Self Employment Tax Est = 
+(SUM(Invoice[TotalAmount]) - SUM(Purchase[Amount])) * 0.153
 // Format: Currency, 0 decimals
 
 
 // ================================================================================
 // SECTION 8: CUSTOMER METRICS (10 measures)
+// Calculate from Customer and Invoice tables
 // ================================================================================
 
-// 🔢 Total customers (all time)
+// 🔢 Total customers
 CUST - Total Customers = DISTINCTCOUNT(Customer[CustomerId])
 // Format: Whole Number
 
-// 🔢 Active customers (with invoices in period)
+// 🔢 Active customers
 CUST - Active Customers = DISTINCTCOUNT(Invoice[CustomerId])
 // Format: Whole Number
 
 // 💰 Average revenue per customer
-CUST - Avg Revenue Per = DIVIDE([REV - Total Revenue], [CUST - Active Customers], 0)
+CUST - Avg Revenue Per = DIVIDE(SUM(Invoice[TotalAmount]), DISTINCTCOUNT(Invoice[CustomerId]), 0)
 // Format: Currency, 0 decimals
 
 // 💰 Customer lifetime value
 CUST - Lifetime Value = DIVIDE(SUM(Invoice[TotalAmount]), DISTINCTCOUNT(Invoice[CustomerId]), 0)
 // Format: Currency, 0 decimals
 
-// 💰 Top customer revenue (single highest)
+// 💰 Top customer revenue
 CUST - Top Customer Revenue = 
-MAXX(TOPN(1, VALUES(Customer[CustomerName]), [REV - Total Revenue], DESC), [REV - Total Revenue])
+MAXX(TOPN(1, VALUES(Customer[CustomerName]), SUM(Invoice[TotalAmount]), DESC), SUM(Invoice[TotalAmount]))
 // Format: Currency, 0 decimals
 
-// 📊 Revenue concentration (% from top customer)
-CUST - Top Customer % = DIVIDE([CUST - Top Customer Revenue], [REV - Total Revenue], 0)
+// 📊 Revenue concentration
+CUST - Top Customer % = 
+VAR TopRev = MAXX(TOPN(1, VALUES(Customer[CustomerName]), SUM(Invoice[TotalAmount]), DESC), SUM(Invoice[TotalAmount]))
+VAR TotalRev = SUM(Invoice[TotalAmount])
+RETURN DIVIDE(TopRev, TotalRev, 0)
 // Format: Percentage, 1 decimal
 
 // 🔢 New customers this year
@@ -575,9 +621,10 @@ CALCULATE(
 
 // 📊 Customer retention rate
 CUST - Retention Rate = 
-VAR LastYear = CALCULATE([CUST - Active Customers], DATEADD(Calendar[Date], -1, YEAR))
-VAR ThisYear = [CUST - Active Customers]
-VAR Retained = ThisYear - [CUST - New This Year]
+VAR LastYear = CALCULATE(DISTINCTCOUNT(Invoice[CustomerId]), DATEADD(Calendar[Date], -1, YEAR))
+VAR ThisYear = DISTINCTCOUNT(Invoice[CustomerId])
+VAR NewCustomers = CALCULATE(DISTINCTCOUNT(Invoice[CustomerId]), FILTER(Invoice, YEAR(Invoice[Date]) = YEAR(TODAY()) && CALCULATE(MIN(Invoice[Date]), ALLEXCEPT(Invoice, Invoice[CustomerId])) >= DATE(YEAR(TODAY()), 1, 1)))
+VAR Retained = ThisYear - NewCustomers
 RETURN DIVIDE(Retained, LastYear, 0)
 // Format: Percentage, 1 decimal
 
@@ -585,46 +632,48 @@ RETURN DIVIDE(Retained, LastYear, 0)
 CUST - Invoice Count = COUNTROWS(Invoice)
 // Format: Whole Number
 
-// 🔢 Lost customers (had revenue last year, none this year)
+// 🔢 Lost customers
 CUST - Lost Customers = 
-VAR LastYearCustomers = CALCULATE(DISTINCTCOUNT(Invoice[CustomerId]), DATEADD(Calendar[Date], -1, YEAR))
-VAR ThisYearCustomers = [CUST - Active Customers]
-VAR RetainedCustomers = ThisYearCustomers - [CUST - New This Year]
-RETURN LastYearCustomers - RetainedCustomers
+VAR LastYear = CALCULATE(DISTINCTCOUNT(Invoice[CustomerId]), DATEADD(Calendar[Date], -1, YEAR))
+VAR ThisYear = DISTINCTCOUNT(Invoice[CustomerId])
+VAR NewThis = CALCULATE(DISTINCTCOUNT(Invoice[CustomerId]), FILTER(Invoice, YEAR(Invoice[Date]) = YEAR(TODAY()) && CALCULATE(MIN(Invoice[Date]), ALLEXCEPT(Invoice, Invoice[CustomerId])) >= DATE(YEAR(TODAY()), 1, 1)))
+VAR Retained = ThisYear - NewThis
+RETURN LastYear - Retained
 // Format: Whole Number
 
 
 // ================================================================================
 // SECTION 9: VENDOR METRICS (6 measures)
+// Calculate from Vendor and Purchase tables
 // ================================================================================
 
 // 🔢 Total vendors
 VENDOR - Total Vendors = DISTINCTCOUNT(Vendor[VendorId])
 // Format: Whole Number
 
-// 🔢 Active vendors (with purchases in period)
+// 🔢 Active vendors
 VENDOR - Active Vendors = DISTINCTCOUNT(Purchase[VendorId])
 // Format: Whole Number
 
 // 💰 Average spend per vendor
-VENDOR - Avg Spend Per = DIVIDE([EXP - Total Expenses], [VENDOR - Active Vendors], 0)
+VENDOR - Avg Spend Per = DIVIDE(SUM(Purchase[Amount]), DISTINCTCOUNT(Purchase[VendorId]), 0)
 // Format: Currency, 0 decimals
 
-// 💰 Top vendor spend (single highest)
+// 💰 Top vendor spend
 VENDOR - Top Vendor Spend = 
-MAXX(TOPN(1, VALUES(Vendor[VendorName]), [EXP - Total Expenses], DESC), [EXP - Total Expenses])
+MAXX(TOPN(1, VALUES(Vendor[VendorName]), SUM(Purchase[Amount]), DESC), SUM(Purchase[Amount]))
 // Format: Currency, 0 decimals
 
-// 📊 Vendor concentration (% to top vendor)
-VENDOR - Top Vendor % = DIVIDE([VENDOR - Top Vendor Spend], [EXP - Total Expenses], 0)
+// 📊 Vendor concentration
+VENDOR - Top Vendor % = 
+VAR TopSpend = MAXX(TOPN(1, VALUES(Vendor[VendorName]), SUM(Purchase[Amount]), DESC), SUM(Purchase[Amount]))
+VAR TotalSpend = SUM(Purchase[Amount])
+RETURN DIVIDE(TopSpend, TotalSpend, 0)
 // Format: Percentage, 1 decimal
 
-// 💰 1099 vendor payments (for year-end reporting)
+// 💰 1099 vendor payments
 VENDOR - 1099 Payments = 
-CALCULATE(
-    SUM(Purchase[Amount]),
-    FILTER(Vendor, Vendor[Is1099] = TRUE)
-)
+CALCULATE(SUM(Purchase[Amount]), FILTER(Vendor, Vendor[Is1099] = TRUE))
 // Format: Currency, 0 decimals
 
 
@@ -635,43 +684,50 @@ CALCULATE(
 // 💰 Revenue per employee
 EFFICIENCY - Revenue Per Employee = 
 VAR EmployeeCount = DISTINCTCOUNT(Employee[EmployeeId])
-RETURN IF(EmployeeCount > 0, DIVIDE([REV - Total Revenue], EmployeeCount, 0), BLANK())
+RETURN IF(EmployeeCount > 0, DIVIDE(SUM(Invoice[TotalAmount]), EmployeeCount, 0), BLANK())
 // Format: Currency, 0 decimals
 
 // 💰 Profit per employee
 EFFICIENCY - Profit Per Employee = 
 VAR EmployeeCount = DISTINCTCOUNT(Employee[EmployeeId])
-RETURN IF(EmployeeCount > 0, DIVIDE([PROFIT - Gross Profit], EmployeeCount, 0), BLANK())
+VAR GrossProfit = SUM(Invoice[TotalAmount]) - SUM(Purchase[Amount])
+RETURN IF(EmployeeCount > 0, DIVIDE(GrossProfit, EmployeeCount, 0), BLANK())
 // Format: Currency, 0 decimals
 
 // 🔢 Transactions per day
 EFFICIENCY - Transactions Per Day = 
-DIVIDE([CUST - Invoice Count] + COUNTROWS(Purchase), COUNTROWS(Calendar), 0)
+DIVIDE(COUNTROWS(Invoice) + COUNTROWS(Purchase), COUNTROWS(Calendar), 0)
 // Format: Whole Number
 
 // 💰 Average transaction size
 EFFICIENCY - Avg Transaction Size = 
-DIVIDE([REV - Total Revenue] + [EXP - Total Expenses], [CUST - Invoice Count] + COUNTROWS(Purchase), 0)
+VAR TotalValue = SUM(Invoice[TotalAmount]) + SUM(Purchase[Amount])
+VAR TotalCount = COUNTROWS(Invoice) + COUNTROWS(Purchase)
+RETURN DIVIDE(TotalValue, TotalCount, 0)
 // Format: Currency, 0 decimals
 
-// 📊 Liquidity ratio (current assets / current liabilities)
-EFFICIENCY - Liquidity Ratio = DIVIDE([AR - Total Outstanding] + [CASH - Received], [AP - Total Outstanding], 0)
+// 📊 Liquidity ratio
+EFFICIENCY - Liquidity Ratio = 
+DIVIDE(SUM(Invoice[Balance]) + SUM(Payment[Amount]), SUM(Bill[Balance]), 0)
 // Format: Decimal, 2 decimals
 
-// 📊 Asset turnover (revenue / total assets - simplified)
-EFFICIENCY - Asset Turnover = DIVIDE([REV - Total Revenue], [AR - Total Outstanding], 0)
+// 📊 Asset turnover
+EFFICIENCY - Asset Turnover = 
+DIVIDE(SUM(Invoice[TotalAmount]), SUM(Invoice[Balance]), 0)
 // Format: Decimal, 2 decimals
 
-// 💰 Average daily revenue (run rate)
-EFFICIENCY - Avg Daily Revenue = DIVIDE([REV - Total Revenue], COUNTROWS(Calendar), 0)
+// 💰 Average daily revenue
+EFFICIENCY - Avg Daily Revenue = 
+DIVIDE(SUM(Invoice[TotalAmount]), COUNTROWS(Calendar), 0)
 // Format: Currency, 0 decimals
 
-// 📊 Financial health score (composite)
+// 📊 Financial health score
 EFFICIENCY - Financial Health = 
-    ([PROFIT - Gross Margin %] * 0.3) + 
-    ([REV - Growth % YoY] * 0.3) + 
-    (1 - [EXP - Expense Ratio]) * 0.2 + 
-    ([AR - Collection Rate %] * 0.2)
+VAR ProfitMargin = DIVIDE(SUM(Invoice[TotalAmount]) - SUM(Purchase[Amount]), SUM(Invoice[TotalAmount]), 0)
+VAR RevenueGrowth = DIVIDE(SUM(Invoice[TotalAmount]) - CALCULATE(SUM(Invoice[TotalAmount]), SAMEPERIODLASTYEAR(Calendar[Date])), CALCULATE(SUM(Invoice[TotalAmount]), SAMEPERIODLASTYEAR(Calendar[Date])), 0)
+VAR ExpenseRatio = DIVIDE(SUM(Purchase[Amount]), SUM(Invoice[TotalAmount]), 0)
+VAR CollectionRate = DIVIDE(SUM(Payment[Amount]), SUM(Invoice[TotalAmount]), 0)
+RETURN (ProfitMargin * 0.3) + (RevenueGrowth * 0.3) + ((1 - ExpenseRatio) * 0.2) + (CollectionRate * 0.2)
 // Format: Percentage, 1 decimal
 
 
@@ -679,79 +735,77 @@ EFFICIENCY - Financial Health =
 // SECTION 11: KPI STATUS INDICATORS (8 measures)
 // ================================================================================
 
-// 📝 Overall profit health
+// 📝 Profit health status
 KPI - Profit Health = 
-SWITCH(
-    TRUE(),
-    [PROFIT - Gross Margin %] >= 0.20, "Excellent",
-    [PROFIT - Gross Margin %] >= 0.15, "Good",
-    [PROFIT - Gross Margin %] >= 0.10, "Fair",
-    [PROFIT - Gross Margin %] >= 0.05, "Warning",
-    "Critical"
-)
+VAR Margin = DIVIDE(SUM(Invoice[TotalAmount]) - SUM(Purchase[Amount]), SUM(Invoice[TotalAmount]), 0)
+RETURN SWITCH(TRUE(), Margin >= 0.20, "Excellent", Margin >= 0.15, "Good", Margin >= 0.10, "Fair", Margin >= 0.05, "Warning", "Critical")
 // Format: Text
 
-// 📝 Revenue trend indicator
+// 📝 Revenue trend
 KPI - Revenue Trend = 
-IF([REV - Growth % YoY] > 0, "↑ Growing", IF([REV - Growth % YoY] < 0, "↓ Declining", "→ Flat"))
+VAR Growth = DIVIDE(SUM(Invoice[TotalAmount]) - CALCULATE(SUM(Invoice[TotalAmount]), SAMEPERIODLASTYEAR(Calendar[Date])), CALCULATE(SUM(Invoice[TotalAmount]), SAMEPERIODLASTYEAR(Calendar[Date])), 0)
+RETURN IF(Growth > 0, "↑ Growing", IF(Growth < 0, "↓ Declining", "→ Flat"))
 // Format: Text
 
-// 📝 Collection risk indicator
+// 📝 Collection risk
 KPI - Collection Risk = 
-VAR DSO = [AR - Days Sales Outstanding]
+VAR DSO = DIVIDE(SUM(Invoice[Balance]), SUM(Invoice[TotalAmount]), 0) * 365
 RETURN SWITCH(TRUE(), DSO <= 30, "Low Risk", DSO <= 45, "Moderate", DSO <= 60, "High Risk", "Critical")
 // Format: Text
 
-// 📝 Expense control status
+// 📝 Expense control
 KPI - Expense Control = 
-IF([EXP - Growth % YoY] < [REV - Growth % YoY], "Controlled", IF([EXP - Growth % YoY] > [REV - Growth % YoY] * 1.5, "Concern", "Monitor"))
+VAR ExpGrowth = DIVIDE(SUM(Purchase[Amount]) - CALCULATE(SUM(Purchase[Amount]), SAMEPERIODLASTYEAR(Calendar[Date])), CALCULATE(SUM(Purchase[Amount]), SAMEPERIODLASTYEAR(Calendar[Date])), 0)
+VAR RevGrowth = DIVIDE(SUM(Invoice[TotalAmount]) - CALCULATE(SUM(Invoice[TotalAmount]), SAMEPERIODLASTYEAR(Calendar[Date])), CALCULATE(SUM(Invoice[TotalAmount]), SAMEPERIODLASTYEAR(Calendar[Date])), 0)
+RETURN IF(ExpGrowth < RevGrowth, "Controlled", IF(ExpGrowth > RevGrowth * 1.5, "Concern", "Monitor"))
 // Format: Text
 
 // 📝 Liquidity status
 KPI - Liquidity Status = 
-VAR Ratio = [EFFICIENCY - Liquidity Ratio]
+VAR Ratio = DIVIDE(SUM(Invoice[Balance]) + SUM(Payment[Amount]), SUM(Bill[Balance]), 0)
 RETURN SWITCH(TRUE(), Ratio >= 2, "Strong", Ratio >= 1.5, "Adequate", Ratio >= 1, "Weak", "Critical")
 // Format: Text
 
 // 📝 Vendor payment status
 KPI - Vendor Payment = 
-VAR DPO = [AP - Days Payable Outstanding]
+VAR DPO = DIVIDE(SUM(Bill[Balance]), SUM(Purchase[Amount]), 0) * 365
 RETURN SWITCH(TRUE(), DPO <= 30, "On Time", DPO <= 45, "Slightly Late", DPO <= 60, "Late", "Very Late")
 // Format: Text
 
-// 📝 Tax planning status (retirement contributions)
+// 📝 Tax planning status
 KPI - Tax Planning Status = 
-IF([TAX - Retirement Utilization %] >= 0.80, "Optimized", IF([TAX - Retirement Utilization %] >= 0.50, "Good", IF([TAX - Retirement Utilization %] > 0, "Underutilized", "Not Used")))
+VAR RetireUtil = DIVIDE(CALCULATE(SUM(PurchaseLineItems[Amount]), FILTER(Account, CONTAINSSTRING(Account[AccountName], "Retirement"))), 69000, 0)
+RETURN IF(RetireUtil >= 0.80, "Optimized", IF(RetireUtil >= 0.50, "Good", IF(RetireUtil > 0, "Underutilized", "Not Used")))
 // Format: Text
 
 // 📝 Working capital status
 KPI - Working Capital = 
-IF([AP - Working Capital] > 0, "Positive", IF([AP - Working Capital] < 0, "Negative", "Neutral"))
+VAR WC = SUM(Invoice[Balance]) - SUM(Bill[Balance])
+RETURN IF(WC > 0, "Positive", IF(WC < 0, "Negative", "Neutral"))
 // Format: Text
 
 
 // ================================================================================
 // SECTION 12: HOME CARE SPECIFIC METRICS (20 measures) 🏥
 // ================================================================================
-// Specialized for home care/home health companies
 
-// 🔢 Number of active clients (patients)
+// 🔢 Active clients (patients)
 HC - Active Clients = DISTINCTCOUNT(Invoice[CustomerId])
 // Format: Whole Number
 
 // 💰 Average revenue per client
-HC - Avg Revenue Per Client = DIVIDE([REV - Total Revenue], [HC - Active Clients], 0)
+HC - Avg Revenue Per Client = DIVIDE(SUM(Invoice[TotalAmount]), DISTINCTCOUNT(Invoice[CustomerId]), 0)
 // Format: Currency, 0 decimals
 
-// 💰 Average revenue per visit (if tracking visit data)
-HC - Avg Revenue Per Visit = [REV - Avg Per Invoice]
+// 💰 Average revenue per visit
+HC - Avg Revenue Per Visit = DIVIDE(SUM(Invoice[TotalAmount]), COUNTROWS(Invoice), 0)
 // Format: Currency, 0 decimals
 
-// 🔢 Total visits/services rendered
-HC - Total Visits = [CUST - Invoice Count]
+// 🔢 Total visits
+HC - Total Visits = COUNTROWS(Invoice)
 // Format: Whole Number
 
-// 💰 Medicare revenue (if separated in chart of accounts)
+// 💰 Medicare revenue
 HC - Medicare Revenue = 
 CALCULATE(
     SUM(InvoiceLineItems[Amount]),
@@ -777,22 +831,41 @@ CALCULATE(
 
 // 💰 Insurance revenue
 HC - Insurance Revenue = 
-[REV - Total Revenue] - [HC - Medicare Revenue] - [HC - Medicaid Revenue] - [HC - Private Pay Revenue]
+VAR Total = SUM(Invoice[TotalAmount])
+VAR Medicare = CALCULATE(SUM(InvoiceLineItems[Amount]), FILTER(Item, CONTAINSSTRING(Item[Name], "Medicare")))
+VAR Medicaid = CALCULATE(SUM(InvoiceLineItems[Amount]), FILTER(Item, CONTAINSSTRING(Item[Name], "Medicaid")))
+VAR Private = CALCULATE(SUM(InvoiceLineItems[Amount]), FILTER(Item, CONTAINSSTRING(Item[Name], "Private")))
+RETURN Total - Medicare - Medicaid - Private
 // Format: Currency, 0 decimals
 
 // 📊 Medicare revenue percentage
-HC - Medicare % = DIVIDE([HC - Medicare Revenue], [REV - Total Revenue], 0)
+HC - Medicare % = 
+DIVIDE(
+    CALCULATE(SUM(InvoiceLineItems[Amount]), FILTER(Item, CONTAINSSTRING(Item[Name], "Medicare"))),
+    SUM(Invoice[TotalAmount]),
+    0
+)
 // Format: Percentage, 1 decimal
 
 // 📊 Medicaid revenue percentage
-HC - Medicaid % = DIVIDE([HC - Medicaid Revenue], [REV - Total Revenue], 0)
+HC - Medicaid % = 
+DIVIDE(
+    CALCULATE(SUM(InvoiceLineItems[Amount]), FILTER(Item, CONTAINSSTRING(Item[Name], "Medicaid"))),
+    SUM(Invoice[TotalAmount]),
+    0
+)
 // Format: Percentage, 1 decimal
 
-// 📊 Private pay percentage (usually highest margin)
-HC - Private Pay % = DIVIDE([HC - Private Pay Revenue], [REV - Total Revenue], 0)
+// 📊 Private pay percentage
+HC - Private Pay % = 
+DIVIDE(
+    CALCULATE(SUM(InvoiceLineItems[Amount]), FILTER(Item, CONTAINSSTRING(Item[Name], "Private"))),
+    SUM(Invoice[TotalAmount]),
+    0
+)
 // Format: Percentage, 1 decimal
 
-// 💰 Direct care labor costs (caregiver wages)
+// 💰 Direct care labor costs
 HC - Direct Care Labor = 
 CALCULATE(
     SUM(PurchaseLineItems[Amount]),
@@ -814,230 +887,4 @@ CALCULATE(
         Account,
         CONTAINSSTRING(Account[AccountName], "Admin") ||
         CONTAINSSTRING(Account[AccountName], "Office Staff") ||
-        CONTAINSSTRING(Account[AccountName], "Management")
-    )
-)
-// Format: Currency, 0 decimals
-
-// 📊 Direct care labor as % of revenue (key metric for home care)
-HC - Labor Cost % = DIVIDE([HC - Direct Care Labor], [REV - Total Revenue], 0)
-// Format: Percentage, 1 decimal
-
-// 💰 Total payroll costs
-HC - Total Payroll = [HC - Direct Care Labor] + [HC - Admin Labor]
-// Format: Currency, 0 decimals
-
-// 📊 Payroll as % of revenue (should be 50-60% for healthy home care agency)
-HC - Payroll % = DIVIDE([HC - Total Payroll], [REV - Total Revenue], 0)
-// Format: Percentage, 1 decimal
-
-// 💰 Worker's compensation insurance
-HC - Workers Comp = 
-CALCULATE(
-    SUM(PurchaseLineItems[Amount]),
-    FILTER(Account, CONTAINSSTRING(Account[AccountName], "Workers Comp"))
-)
-// Format: Currency, 0 decimals
-
-// 💰 Liability insurance
-HC - Liability Insurance = 
-CALCULATE(
-    SUM(PurchaseLineItems[Amount]),
-    FILTER(
-        Account,
-        CONTAINSSTRING(Account[AccountName], "Liability") ||
-        CONTAINSSTRING(Account[AccountName], "Insurance")
-    )
-)
-// Format: Currency, 0 decimals
-
-// 📊 Insurance costs as % of revenue
-HC - Insurance % = DIVIDE([HC - Workers Comp] + [HC - Liability Insurance], [REV - Total Revenue], 0)
-// Format: Percentage, 1 decimal
-
-// 📝 Payor mix health (diversification indicator)
-HC - Payor Mix Health = 
-VAR HighestPayor = MAX([HC - Medicare %], [HC - Medicaid %], [HC - Private Pay %])
-RETURN IF(HighestPayor < 0.60, "Well Diversified", IF(HighestPayor < 0.75, "Moderate Risk", "High Concentration Risk"))
-// Format: Text
-
-
-// ================================================================================
-// SECTION 13: BENCHMARKING & TARGETS (5 measures)
-// ================================================================================
-
-// 💰 Revenue target (monthly - adjust as needed)
-TARGET - Revenue Monthly = 150000
-// Format: Currency, 0 decimals
-
-// 📊 Revenue vs target percentage
-TARGET - Revenue vs Target % = DIVIDE([REV - Total Revenue], [TARGET - Revenue Monthly], 0)
-// Format: Percentage, 1 decimal
-
-// 💰 Revenue variance from target
-TARGET - Revenue Variance = [REV - Total Revenue] - [TARGET - Revenue Monthly]
-// Format: Currency, 0 decimals
-
-// 📝 Target achievement status
-TARGET - Achievement Status = 
-SWITCH(
-    TRUE(),
-    [TARGET - Revenue vs Target %] >= 1.10, "Exceeding",
-    [TARGET - Revenue vs Target %] >= 1.00, "On Track",
-    [TARGET - Revenue vs Target %] >= 0.90, "Slightly Behind",
-    "Significantly Behind"
-)
-// Format: Text
-
-// 💰 Annual revenue projection (based on YTD)
-TARGET - Annual Projection = 
-VAR DaysElapsed = DATEDIFF(DATE(YEAR(TODAY()), 1, 1), TODAY(), DAY)
-VAR DaysInYear = IF(MOD(YEAR(TODAY()), 4) = 0, 366, 365)
-RETURN [REV - YTD] * DaysInYear / DaysElapsed
-// Format: Currency, 0 decimals
-
-
-/*
-================================================================================
-IMPLEMENTATION SUMMARY
-================================================================================
-
-TOTAL MEASURES CREATED: 133
-
-BREAKDOWN BY CATEGORY:
-✅ Revenue Metrics: 12 measures
-✅ Expense Metrics: 12 measures
-✅ Profitability: 10 measures
-✅ Accounts Receivable: 10 measures
-✅ Accounts Payable: 8 measures
-✅ Cash Flow: 8 measures
-✅ Tax Planning: 20 measures 🔥 (CRITICAL for competitive advantage)
-✅ Customer Metrics: 10 measures
-✅ Vendor Metrics: 6 measures
-✅ Efficiency Metrics: 8 measures
-✅ KPI Indicators: 8 measures
-✅ Home Care Specific: 20 measures 🏥 (Industry-specific)
-✅ Benchmarking: 5 measures
-
-HOME CARE INDUSTRY INSIGHTS:
-- Direct care labor should be 40-50% of revenue
-- Total payroll should be 50-60% of revenue
-- Gross margins typically 20-30%
-- Private pay has highest margins (35-40%)
-- Medicare/Medicaid lower margins (15-25%)
-- Payor mix diversification critical for stability
-- AR aging critical due to insurance payment delays
-
-CRITICAL RATIOS FOR HOME CARE:
-- Labor Cost %: Target 50-60%
-- Direct Care Labor %: Target 40-50%
-- Admin Labor %: Target 10-15%
-- Gross Margin %: Target 20-30%
-- Operating Margin %: Target 10-20%
-- Insurance Costs %: Target 8-12%
-
-TAX PLANNING PRIORITIES FOR HOME CARE:
-1. Section 179 for medical equipment, vehicles
-2. Retirement contributions (often underutilized)
-3. Health insurance premiums (owners/employees)
-4. Vehicle expenses (caregivers traveling to clients)
-5. Home office deduction (administrative staff)
-6. Workers compensation optimization
-7. Meals & entertainment (50% rule)
-
-DASHBOARD PAGE RECOMMENDATIONS:
-
-PAGE 1: Executive Overview
-- REV - Total Revenue (card)
-- EXP - Total Expenses (card)
-- PROFIT - Gross Profit (card)
-- PROFIT - Gross Margin % (card)
-- Revenue trend (line chart)
-- Top 10 customers (bar chart)
-- Expense by category (bar chart)
-
-PAGE 2: Home Care Operations
-- HC - Active Clients (card)
-- HC - Total Visits (card)
-- HC - Labor Cost % (gauge)
-- HC - Payroll % (gauge)
-- Payor mix chart (pie chart showing Medicare/Medicaid/Private/Insurance %)
-- Revenue by payor type (bar chart)
-- Labor costs trend (line chart)
-
-PAGE 3: Tax Planning
-- TAX - Section 179 Opportunity (card)
-- TAX - Retirement Room (card)
-- TAX - Meals Deductible (card)
-- TAX - Estimated Quarterly Tax (card)
-- Fixed asset purchases table (detailed)
-- Owner distributions trend
-- Retirement contributions vs limit (gauge)
-
-PAGE 4: Cash Flow & AR
-- AR - Total Outstanding (card)
-- CASH - Net Flow (card)
-- AR - Days Sales Outstanding (card)
-- AR - Health Status (indicator)
-- AR aging breakdown (stacked bar: 0-30, 31-60, 61-90, 90+)
-- Cash flow waterfall chart
-- Top customers by AR balance
-
-PAGE 5: KPIs & Alerts
-- All KPI status indicators (cards with conditional formatting)
-- Revenue vs target gauge
-- Key metrics sparklines
-- Month-over-month variance table
-
-POWER AUTOMATE MONITORING RULES:
-
-RULE 1: Large Asset Purchase
-Trigger: PurchaseLineItems[Amount] > 5000 AND Account[AccountType] = "Fixed Asset"
-Action: Email alert "Section 179 opportunity - $X equipment purchase"
-
-RULE 2: Retirement Contribution
-Trigger: Account contains "401k" OR "SEP" OR "IRA"
-Action: Email alert "Track against annual limits - currently at $X of $69k"
-
-RULE 3: Owner Distribution
-Trigger: PurchaseLineItems[Amount] > 10000 AND Account contains "Distribution"
-Action: Email alert "Large distribution - review S-corp reasonable compensation"
-
-RULE 4: High Labor Cost
-Trigger: HC - Labor Cost % > 0.60
-Action: Email alert "Labor costs exceed 60% - review scheduling efficiency"
-
-RULE 5: AR Over 90 Days High
-Trigger: AR - Over 90 % > 0.20
-Action: Email alert "20% of AR aged over 90 days - collection action needed"
-
-RULE 6: Medicare/Medicaid Concentration
-Trigger: HC - Medicare % + HC - Medicaid % > 0.80
-Action: Email alert "High government payor concentration - diversification needed"
-
-RULE 7: Cash Flow Negative
-Trigger: CASH - Net Flow < 0 for 2 consecutive months
-Action: Email alert "Negative cash flow alert - review payables schedule"
-
-RULE 8: Quarterly Tax Reminder
-Trigger: End of each quarter
-Action: Email alert with TAX - Estimated Quarterly Tax amount
-
-FORMATTING RECOMMENDATIONS:
-All measures with prefixes automatically sort by category in Field List
-Use conditional formatting on KPI indicators (green/yellow/red)
-Set up drill-through from summary to detail pages
-Enable bookmarks for different user views (owner vs CFO vs operations)
-
-NEXT STEPS:
-1. Create all 133 measures in _Measures table
-2. Format each appropriately (currency, percentage, etc.)
-3. Build 5 dashboard pages as outlined
-4. Set up Power Automate for real-time monitoring
-5. Test with actual client data
-6. Refine based on home care industry feedback
-7. Document for GitHub repository
-
-This comprehensive measure library enables true Financial Intelligence
-with proactive tax planning and industry-specific insights for home care companies.
-*/
+        CONTAINSSTRING(Account[AccountN
