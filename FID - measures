@@ -808,9 +808,8 @@ HC - Total Visits = COUNTROWS(Invoice)
 // 💰 Medicare revenue
 HC - Medicare Revenue = 
 CALCULATE(
-    SUM(InvoiceLineItems[Amount]),
-    FILTER(Item, CONTAINSSTRING(Item[Name], "Medicare") || CONTAINSSTRING(Item[ItemName], "Medicare"))
-)
+    SUM('Invoice Line Items'[Amount]),
+    FILTER('Invoice Line Items', CONTAINSSTRING('Invoice Line Items'[ItemName], "Medicare"))
 // Format: Currency, 0 decimals
 
 // 💰 Medicaid revenue
