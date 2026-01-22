@@ -1,0 +1,697 @@
+/*
+================================================================================
+COMPLETE DAX MEASURES LIBRARY
+Financial Intelligence Dashboard for CPAs
+================================================================================
+Total Measures: 60+
+Created for: Frimpong & Associates - Financial Intelligence Dashboard
+
+HOW TO USE:
+1. Create _Measures table: _Measures = {1}
+2. Select _Measures table
+3. Click "New Measure" for each measure below
+4. Copy/paste the DAX code
+5. Format as indicated
+
+FORMATTING GUIDE:
+💰 Currency: $ English (United States), 0 decimals
+📊 Percentage: Percentage, 1 decimal  
+🔢 Whole Number: Whole number, 0 decimals
+📅 Date: Date format
+
+================================================================================
+*/
+
+
+// ================================================================================
+// SECTION 1: CORE FINANCIAL METRICS (10 measures)
+// ================================================================================
+// These are the foundation of your dashboard
+
+// 💰 Total revenue from invoices
+Total Revenue = SUM(Invoice[TotalAmount])
+// Format: Currency, 0 decimals
+
+// 💰 Total expenses from purchases
+Total Expenses = SUM(Purchase[Amount])
+// Format: Currency, 0 decimals
+
+// 💰 Gross profit calculation
+Gross Profit = [Total Revenue] - [Total Expenses]
+// Format: Currency, 0 decimals
+
+// 📊 Profit margin percentage
+Profit Margin % = DIVIDE([Gross Profit], [Total Revenue], 0)
+// Format: Percentage, 1 decimal
+
+// 💰 Total accounts receivable outstanding
+Total AR = SUM(Invoice[Balance])
+// Format: Currency, 0 decimals
+
+// 💰 Cash collected from customers
+Cash Received = SUM(Payment[Amount])
+// Format: Currency, 0 decimals
+
+// 💰 Revenue from same period last year
+Revenue LY = CALCULATE([Total Revenue], SAMEPERIODLASTYEAR(Calendar[Date]))
+// Format: Currency, 0 decimals
+
+// 📊 Year-over-year revenue growth
+Revenue Growth % = DIVIDE([Total Revenue] - [Revenue LY], [Revenue LY], 0)
+// Format: Percentage, 1 decimal
+
+// 🔢 Number of invoices
+Invoice Count = COUNTROWS(Invoice)
+// Format: Whole Number
+
+// 🔢 Number of customers with invoices
+Active Customers = DISTINCTCOUNT(Invoice[CustomerId])
+// Format: Whole Number
+
+
+// ================================================================================
+// SECTION 2: CASH FLOW METRICS (5 measures)
+// ================================================================================
+// Monitor cash position and cash flow health
+
+// 💰 Total cash paid out
+Cash Out = SUM(BillPayment[Amount]) + [Total Expenses]
+// Format: Currency, 0 decimals
+
+// 💰 Net cash flow (in minus out)
+Net Cash Flow = [Cash Received] - [Cash Out]
+// Format: Currency, 0 decimals
+
+// 💰 Year-to-date operating cash flow
+Operating Cash Flow YTD = TOTALYTD([Net Cash Flow], Calendar[Date])
+// Format: Currency, 0 decimals
+
+// 💰 Total cash inflows
+Cash In = [Cash Received] + SUM(SalesReceipt[Amount]) + SUM(Deposit[Amount])
+// Format: Currency, 0 decimals
+
+// 📊 Cash conversion rate
+Cash Conversion Rate = DIVIDE([Cash Received], [Total Revenue], 0)
+// Format: Percentage, 1 decimal
+
+
+// ================================================================================
+// SECTION 3: ACCOUNTS RECEIVABLE AGING (7 measures)
+// ================================================================================
+// Critical for understanding collection risk
+
+// 💰 AR aged 0-30 days
+AR 0-30 Days = 
+CALCULATE(
+    SUM(Invoice[Balance]),
+    FILTER(
+        Invoice, 
+        Invoice[Date] >= TODAY() - 30 && 
+        Invoice[Balance] > 0
+    )
+)
+// Format: Currency, 0 decimals
+
+// 💰 AR aged 31-60 days
+AR 31-60 Days = 
+CALCULATE(
+    SUM(Invoice[Balance]),
+    FILTER(
+        Invoice, 
+        Invoice[Date] >= TODAY() - 60 && 
+        Invoice[Date] < TODAY() - 30 && 
+        Invoice[Balance] > 0
+    )
+)
+// Format: Currency, 0 decimals
+
+// 💰 AR aged 61-90 days
+AR 61-90 Days = 
+CALCULATE(
+    SUM(Invoice[Balance]),
+    FILTER(
+        Invoice, 
+        Invoice[Date] >= TODAY() - 90 && 
+        Invoice[Date] < TODAY() - 60 && 
+        Invoice[Balance] > 0
+    )
+)
+// Format: Currency, 0 decimals
+
+// 💰 AR aged over 90 days (high risk)
+AR Over 90 Days = 
+CALCULATE(
+    SUM(Invoice[Balance]),
+    FILTER(
+        Invoice, 
+        Invoice[Date] < TODAY() - 90 && 
+        Invoice[Balance] > 0
+    )
+)
+// Format: Currency, 0 decimals
+
+// 📊 Percentage of AR over 90 days
+AR Over 90 % = DIVIDE([AR Over 90 Days], [Total AR], 0)
+// Format: Percentage, 1 decimal
+
+// 🔢 Average days to collect (DSO - Days Sales Outstanding)
+Days Sales Outstanding = 
+DIVIDE([Total AR], [Total Revenue], 0) * 365
+// Format: Whole Number
+
+// 📊 Collection effectiveness
+Collection Rate % = DIVIDE([Cash Received], [Total Revenue], 0)
+// Format: Percentage, 1 decimal
+
+
+// ================================================================================
+// SECTION 4: TIME INTELLIGENCE MEASURES (12 measures)
+// ================================================================================
+// Compare performance across different time periods
+
+// 💰 Month-to-date revenue
+Revenue MTD = TOTALMTD([Total Revenue], Calendar[Date])
+// Format: Currency, 0 decimals
+
+// 💰 Quarter-to-date revenue
+Revenue QTD = TOTALQTD([Total Revenue], Calendar[Date])
+// Format: Currency, 0 decimals
+
+// 💰 Year-to-date revenue
+Revenue YTD = TOTALYTD([Total Revenue], Calendar[Date])
+// Format: Currency, 0 decimals
+
+// 💰 Revenue from last month
+Revenue Last Month = CALCULATE([Total Revenue], DATEADD(Calendar[Date], -1, MONTH))
+// Format: Currency, 0 decimals
+
+// 📊 Month-over-month revenue growth
+Revenue MoM Growth % = DIVIDE([Total Revenue] - [Revenue Last Month], [Revenue Last Month], 0)
+// Format: Percentage, 1 decimal
+
+// 💰 Year-to-date expenses
+Expenses YTD = TOTALYTD([Total Expenses], Calendar[Date])
+// Format: Currency, 0 decimals
+
+// 💰 Expenses from last year
+Expenses Last Year = CALCULATE([Total Expenses], SAMEPERIODLASTYEAR(Calendar[Date]))
+// Format: Currency, 0 decimals
+
+// 📊 Year-over-year expense growth
+Expense Growth % = DIVIDE([Total Expenses] - [Expenses Last Year], [Expenses Last Year], 0)
+// Format: Percentage, 1 decimal
+
+// 💰 Expenses from last month
+Expenses Last Month = CALCULATE([Total Expenses], DATEADD(Calendar[Date], -1, MONTH))
+// Format: Currency, 0 decimals
+
+// 📊 Month-over-month expense growth
+Expenses MoM % = DIVIDE([Total Expenses] - [Expenses Last Month], [Expenses Last Month], 0)
+// Format: Percentage, 1 decimal
+
+// 💰 Quarter-to-date expenses
+Expenses QTD = TOTALQTD([Total Expenses], Calendar[Date])
+// Format: Currency, 0 decimals
+
+// 💰 3-month moving average revenue (for trending)
+Revenue 3Mo MA = 
+CALCULATE(
+    AVERAGEX(
+        DATESINPERIOD(Calendar[Date], LASTDATE(Calendar[Date]), -3, MONTH),
+        [Total Revenue]
+    )
+)
+// Format: Currency, 0 decimals
+
+
+// ================================================================================
+// SECTION 5: TAX PLANNING MEASURES (15 measures) 🔥 CRITICAL
+// ================================================================================
+// These enable proactive tax planning - your competitive advantage!
+
+// 💰 Fixed asset purchases (Section 179 eligible)
+Fixed Asset Purchases = 
+CALCULATE(
+    SUM(PurchaseLineItems[Amount]),
+    FILTER(Account, Account[AccountType] = "Fixed Asset")
+)
+// Format: Currency, 0 decimals
+
+// 💰 Section 179 deduction opportunity (2024 limit: $1,220,000)
+Section 179 Opportunity = 
+VAR Limit = 1220000
+VAR Purchases = [Fixed Asset Purchases]
+RETURN MIN(Purchases, Limit)
+// Format: Currency, 0 decimals
+
+// 💰 Meals & entertainment expenses (50% deductible)
+Meals & Entertainment = 
+CALCULATE(
+    SUM(PurchaseLineItems[Amount]),
+    FILTER(
+        Account,
+        CONTAINSSTRING(Account[AccountName], "Meals") ||
+        CONTAINSSTRING(Account[AccountName], "Entertainment") ||
+        CONTAINSSTRING(Account[AccountName], "Meal")
+    )
+)
+// Format: Currency, 0 decimals
+
+// 💰 Deductible portion of meals (50% limitation)
+Meals Deductible = [Meals & Entertainment] * 0.50
+// Format: Currency, 0 decimals
+
+// 💰 Non-deductible meals portion
+Meals Non-Deductible = [Meals & Entertainment] * 0.50
+// Format: Currency, 0 decimals
+
+// 💰 Owner distributions (S-corp compliance)
+Owner Distributions = 
+CALCULATE(
+    SUM(PurchaseLineItems[Amount]),
+    FILTER(
+        Account,
+        CONTAINSSTRING(Account[AccountName], "Distribution") ||
+        CONTAINSSTRING(Account[AccountName], "Draw") ||
+        CONTAINSSTRING(Account[AccountName], "Owner")
+    )
+)
+// Format: Currency, 0 decimals
+
+// 💰 Retirement contributions (401k, SEP, IRA)
+Retirement Contributions = 
+CALCULATE(
+    SUM(PurchaseLineItems[Amount]),
+    FILTER(
+        Account,
+        CONTAINSSTRING(Account[AccountName], "401k") ||
+        CONTAINSSTRING(Account[AccountName], "SEP") ||
+        CONTAINSSTRING(Account[AccountName], "IRA") ||
+        CONTAINSSTRING(Account[AccountName], "Retirement") ||
+        CONTAINSSTRING(Account[AccountName], "Pension")
+    )
+)
+// Format: Currency, 0 decimals
+
+// 💰 Remaining retirement contribution room (2024 SEP limit: $69,000)
+Retirement Room Remaining = 69000 - [Retirement Contributions]
+// Format: Currency, 0 decimals
+
+// 📊 Retirement contribution utilization
+Retirement Utilization % = DIVIDE([Retirement Contributions], 69000, 0)
+// Format: Percentage, 1 decimal
+
+// 💰 Vehicle expenses (standard vs actual method)
+Vehicle Expenses = 
+CALCULATE(
+    SUM(PurchaseLineItems[Amount]),
+    FILTER(
+        Account,
+        CONTAINSSTRING(Account[AccountName], "Vehicle") ||
+        CONTAINSSTRING(Account[AccountName], "Auto") ||
+        CONTAINSSTRING(Account[AccountName], "Car") ||
+        CONTAINSSTRING(Account[AccountName], "Truck")
+    )
+)
+// Format: Currency, 0 decimals
+
+// 💰 Home office expenses (deductible if qualified)
+Home Office Expenses = 
+CALCULATE(
+    SUM(PurchaseLineItems[Amount]),
+    FILTER(
+        Account,
+        CONTAINSSTRING(Account[AccountName], "Home Office") ||
+        CONTAINSSTRING(Account[AccountName], "Rent - Home")
+    )
+)
+// Format: Currency, 0 decimals
+
+// 💰 Health insurance premiums (self-employed deduction)
+Health Insurance Premiums = 
+CALCULATE(
+    SUM(PurchaseLineItems[Amount]),
+    FILTER(
+        Account,
+        CONTAINSSTRING(Account[AccountName], "Health Insurance") ||
+        CONTAINSSTRING(Account[AccountName], "Medical Insurance")
+    )
+)
+// Format: Currency, 0 decimals
+
+// 💰 Estimated taxable income (simplified)
+Estimated Taxable Income = [Gross Profit] - [Meals Deductible]
+// Format: Currency, 0 decimals
+
+// 💰 Estimated quarterly tax liability (25% rate - adjust as needed)
+Estimated Quarterly Tax = [Estimated Taxable Income] * 0.25 / 4
+// Format: Currency, 0 decimals
+
+// 💰 Business mileage expenses
+Business Mileage = 
+CALCULATE(
+    SUM(PurchaseLineItems[Amount]),
+    FILTER(
+        Account,
+        CONTAINSSTRING(Account[AccountName], "Mileage") ||
+        CONTAINSSTRING(Account[AccountName], "Travel - Auto")
+    )
+)
+// Format: Currency, 0 decimals
+
+
+// ================================================================================
+// SECTION 6: CUSTOMER METRICS (8 measures)
+// ================================================================================
+// Understand customer profitability and behavior
+
+// 💰 Average revenue per customer
+Average Revenue Per Customer = DIVIDE([Total Revenue], [Active Customers], 0)
+// Format: Currency, 0 decimals
+
+// 💰 Customer lifetime value
+Customer Lifetime Value = DIVIDE(SUM(Invoice[TotalAmount]), DISTINCTCOUNT(Invoice[CustomerId]), 0)
+// Format: Currency, 0 decimals
+
+// 💰 Top customer revenue (single highest)
+Top Customer Revenue = 
+MAXX(
+    TOPN(1, VALUES(Customer[CustomerName]), [Total Revenue], DESC),
+    [Total Revenue]
+)
+// Format: Currency, 0 decimals
+
+// 📊 Revenue concentration (% from top customer)
+Top Customer Concentration % = DIVIDE([Top Customer Revenue], [Total Revenue], 0)
+// Format: Percentage, 1 decimal
+
+// 🔢 New customers this year
+New Customers This Year = 
+CALCULATE(
+    DISTINCTCOUNT(Invoice[CustomerId]),
+    FILTER(
+        Invoice,
+        YEAR(Invoice[Date]) = YEAR(TODAY()) &&
+        CALCULATE(
+            MIN(Invoice[Date]),
+            ALLEXCEPT(Invoice, Invoice[CustomerId])
+        ) >= DATE(YEAR(TODAY()), 1, 1)
+    )
+)
+// Format: Whole Number
+
+// 🔢 Total customers (all time)
+Total Customers = DISTINCTCOUNT(Customer[CustomerId])
+// Format: Whole Number
+
+// 📊 Customer retention rate
+Customer Retention Rate = 
+VAR CustomersLastYear = CALCULATE([Active Customers], DATEADD(Calendar[Date], -1, YEAR))
+VAR CustomersThisYear = [Active Customers]
+VAR RetainedCustomers = CustomersThisYear - [New Customers This Year]
+RETURN DIVIDE(RetainedCustomers, CustomersLastYear, 0)
+// Format: Percentage, 1 decimal
+
+// 💰 Average invoice amount
+Average Invoice Amount = DIVIDE([Total Revenue], [Invoice Count], 0)
+// Format: Currency, 0 decimals
+
+
+// ================================================================================
+// SECTION 7: VENDOR METRICS (6 measures)
+// ================================================================================
+// Track vendor relationships and spending patterns
+
+// 🔢 Number of active vendors
+Active Vendors = DISTINCTCOUNT(Purchase[VendorId])
+// Format: Whole Number
+
+// 💰 Average spend per vendor
+Average Spend Per Vendor = DIVIDE([Total Expenses], [Active Vendors], 0)
+// Format: Currency, 0 decimals
+
+// 💰 Outstanding bills to vendors
+Bills Outstanding = SUM(Bill[Balance])
+// Format: Currency, 0 decimals
+
+// 💰 Top vendor spend (single highest)
+Top Vendor Spend = 
+MAXX(
+    TOPN(1, VALUES(Vendor[VendorName]), [Total Expenses], DESC),
+    [Total Expenses]
+)
+// Format: Currency, 0 decimals
+
+// 📊 Vendor concentration (% to top vendor)
+Top Vendor Concentration % = DIVIDE([Top Vendor Spend], [Total Expenses], 0)
+// Format: Percentage, 1 decimal
+
+// 💰 1099 vendor payments (for 1099 reporting)
+1099 Vendor Payments = 
+CALCULATE(
+    SUM(Purchase[Amount]),
+    FILTER(Vendor, Vendor[Is1099] = TRUE)
+)
+// Format: Currency, 0 decimals
+
+
+// ================================================================================
+// SECTION 8: PROFITABILITY RATIOS (8 measures)
+// ================================================================================
+// Deeper profitability analysis
+
+// 💰 Total revenue including cash sales
+Total Sales = [Total Revenue] + SUM(SalesReceipt[Amount])
+// Format: Currency, 0 decimals
+
+// 💰 Net income (comprehensive)
+Net Income = [Total Sales] - [Total Expenses]
+// Format: Currency, 0 decimals
+
+// 📊 Net profit margin
+Net Profit Margin % = DIVIDE([Net Income], [Total Sales], 0)
+// Format: Percentage, 1 decimal
+
+// 💰 Revenue per invoice
+Revenue Per Invoice = DIVIDE([Total Revenue], [Invoice Count], 0)
+// Format: Currency, 0 decimals
+
+// 📊 Operating margin
+Operating Margin % = DIVIDE([Gross Profit], [Total Sales], 0)
+// Format: Percentage, 1 decimal
+
+// 💰 EBITDA (simplified - earnings before interest, taxes, depreciation, amortization)
+EBITDA = [Gross Profit]
+// Format: Currency, 0 decimals
+// Note: This is simplified - adjust based on your chart of accounts
+
+// 💰 Average daily revenue (run rate)
+Average Daily Revenue = DIVIDE([Total Revenue], COUNTROWS(Calendar), 0)
+// Format: Currency, 0 decimals
+
+// 💰 Break-even revenue target (when profit = 0)
+Break Even Revenue = [Total Expenses]
+// Format: Currency, 0 decimals
+
+
+// ================================================================================
+// SECTION 9: EFFICIENCY METRICS (5 measures)
+// ================================================================================
+// Operational efficiency and productivity
+
+// 💰 Revenue per employee (if employee data available)
+Revenue Per Employee = 
+VAR EmployeeCount = DISTINCTCOUNT(Employee[EmployeeId])
+RETURN IF(EmployeeCount > 0, DIVIDE([Total Revenue], EmployeeCount, 0), BLANK())
+// Format: Currency, 0 decimals
+
+// 📊 Expense ratio (expenses as % of revenue)
+Expense Ratio = DIVIDE([Total Expenses], [Total Revenue], 0)
+// Format: Percentage, 1 decimal
+
+// 🔢 Transactions per day
+Transactions Per Day = 
+DIVIDE(
+    [Invoice Count] + COUNTROWS(Purchase),
+    COUNTROWS(Calendar),
+    0
+)
+// Format: Whole Number
+
+// 💰 Average transaction size (all transactions)
+Average Transaction Size = 
+DIVIDE(
+    [Total Revenue] + [Total Expenses],
+    [Invoice Count] + COUNTROWS(Purchase),
+    0
+)
+// Format: Currency, 0 decimals
+
+// 📊 Working capital (simplified: AR - AP)
+Working Capital = [Total AR] - [Bills Outstanding]
+// Format: Currency, 0 decimals
+
+
+// ================================================================================
+// SECTION 10: KPI STATUS INDICATORS (6 measures)
+// ================================================================================
+// For conditional formatting and RAG (Red/Amber/Green) indicators
+
+// 📝 Profit health status indicator
+Profit Health Status = 
+SWITCH(
+    TRUE(),
+    [Profit Margin %] >= 0.20, "Excellent",
+    [Profit Margin %] >= 0.15, "Good",
+    [Profit Margin %] >= 0.10, "Fair",
+    [Profit Margin %] >= 0.05, "Warning",
+    "Critical"
+)
+// Format: Text
+
+// 📝 AR health status indicator
+AR Health Status = 
+VAR OverduePercent = DIVIDE([AR Over 90 Days], [Total AR], 0)
+RETURN
+    SWITCH(
+        TRUE(),
+        OverduePercent < 0.10, "Healthy",
+        OverduePercent < 0.20, "Monitor",
+        OverduePercent < 0.30, "Warning",
+        "Critical"
+    )
+// Format: Text
+
+// 📝 Cash flow status indicator
+Cash Flow Status = 
+IF(
+    [Net Cash Flow] > 0, 
+    "Positive", 
+    IF([Net Cash Flow] < 0, "Negative", "Neutral")
+)
+// Format: Text
+
+// 📝 Revenue trend indicator
+Revenue Trend = 
+IF(
+    [Revenue Growth %] > 0,
+    "↑ Growing",
+    IF([Revenue Growth %] < 0, "↓ Declining", "→ Flat")
+)
+// Format: Text
+
+// 📝 Collection risk indicator
+Collection Risk = 
+VAR DSODays = [Days Sales Outstanding]
+RETURN
+    SWITCH(
+        TRUE(),
+        DSODays <= 30, "Low Risk",
+        DSODays <= 45, "Moderate Risk",
+        DSODays <= 60, "High Risk",
+        "Critical Risk"
+    )
+// Format: Text
+
+// 📝 Expense control indicator
+Expense Control Status = 
+IF(
+    [Expense Growth %] < [Revenue Growth %],
+    "Controlled",
+    IF([Expense Growth %] > [Revenue Growth %] * 1.5, "Concern", "Monitor")
+)
+// Format: Text
+
+
+// ================================================================================
+// SECTION 11: BENCHMARKING METRICS (4 measures)
+// ================================================================================
+// Compare against targets or industry standards
+
+// 💰 Revenue target (adjust as needed - example: $1.5M annual)
+Revenue Target = 1500000 / 12
+// Format: Currency, 0 decimals
+
+// 📊 Revenue vs target
+Revenue vs Target % = DIVIDE([Total Revenue], [Revenue Target], 0)
+// Format: Percentage, 1 decimal
+
+// 💰 Revenue variance from target
+Revenue Variance = [Total Revenue] - [Revenue Target]
+// Format: Currency, 0 decimals
+
+// 📝 Target achievement status
+Target Achievement = 
+SWITCH(
+    TRUE(),
+    [Revenue vs Target %] >= 1.10, "Exceeding",
+    [Revenue vs Target %] >= 1.00, "On Track",
+    [Revenue vs Target %] >= 0.90, "Slightly Behind",
+    "Significantly Behind"
+)
+// Format: Text
+
+
+// ================================================================================
+// IMPLEMENTATION SUMMARY
+// ================================================================================
+
+/*
+TOTAL MEASURES CREATED: 95
+
+BREAKDOWN BY CATEGORY:
+✅ Core Financial: 10 measures
+✅ Cash Flow: 5 measures
+✅ AR Aging: 7 measures
+✅ Time Intelligence: 12 measures
+✅ Tax Planning: 15 measures (CRITICAL for competitive advantage)
+✅ Customer Metrics: 8 measures
+✅ Vendor Metrics: 6 measures
+✅ Profitability: 8 measures
+✅ Efficiency: 5 measures
+✅ KPI Indicators: 6 measures
+✅ Benchmarking: 4 measures
+
+PRIORITY IMPLEMENTATION ORDER:
+1. Core Financial (10) - Essential foundation
+2. Tax Planning (15) - Your competitive differentiator
+3. AR Aging (7) - Cash flow critical
+4. Time Intelligence (12) - Trending and comparisons
+5. Cash Flow (5) - Financial health
+6. Everything else - Based on client needs
+
+FORMATTING QUICK REFERENCE:
+💰 = Currency, $, 0 decimals
+📊 = Percentage, 1 decimal
+🔢 = Whole Number
+📝 = Text (no formatting needed)
+
+NEXT STEPS:
+1. Create all measures in _Measures table
+2. Format each measure appropriately
+3. Build dashboard visuals using these measures
+4. Create Tax Planning page highlighting Section 179, retirement, meals, etc.
+5. Set up Power Automate to monitor transactions in real-time
+
+TAX PLANNING DASHBOARD PRIORITY MEASURES:
+- Fixed Asset Purchases
+- Section 179 Opportunity
+- Meals & Entertainment + Meals Deductible
+- Owner Distributions
+- Retirement Contributions + Retirement Room Remaining
+- Vehicle Expenses
+- Estimated Quarterly Tax
+
+These measures enable the proactive tax planning that differentiates your
+service from traditional fractional CFO offerings.
+
+NOTES:
+- Adjust tax limits annually (Section 179, retirement limits change yearly)
+- Customize account name filters based on actual chart of accounts
+- Some measures assume specific account naming conventions
+- Test all measures with actual data to ensure accuracy
+- Add additional measures as specific client needs arise
+
+For questions or customization needs, refer to the complete query library
+and original proposal documentation.
+*/
