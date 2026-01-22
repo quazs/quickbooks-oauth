@@ -1,0 +1,51 @@
+// ACCOUNTS PAYABLE AGING
+AP 0-30 Days = CALCULATE(SUM(Bill[Balance]), FILTER(Bill, Bill[Date] >= TODAY() - 30 && Bill[Balance] > 0))
+
+AP 31-60 Days = CALCULATE(SUM(Bill[Balance]), FILTER(Bill, Bill[Date] >= TODAY() - 60 && Bill[Date] < TODAY() - 30 && Bill[Balance] > 0))
+
+AP 61-90 Days = CALCULATE(SUM(Bill[Balance]), FILTER(Bill, Bill[Date] >= TODAY() - 90 && Bill[Date] < TODAY() - 60 && Bill[Balance] > 0))
+
+AP Over 90 Days = CALCULATE(SUM(Bill[Balance]), FILTER(Bill, Bill[Date] < TODAY() - 90 && Bill[Balance] > 0))
+
+Days Payable Outstanding = DIVIDE([Bills Outstanding], [Total Expenses], 0) * 365
+
+// SALES TAX
+Sales Tax Collected = SUM(Invoice[TxnTaxDetail.TotalTax])
+
+Sales Tax Payable = [Sales Tax Collected] - SUM(TaxPayment[Amount])
+
+// PRODUCT/SERVICE ANALYSIS
+Revenue by Item = CALCULATE(SUM(InvoiceLineItems[Amount]), ALLEXCEPT(Item, Item[ItemName]))
+
+Item Profitability = [Revenue by Item] - CALCULATE(SUM(PurchaseLineItems[Amount]), ALLEXCEPT(Item, Item[ItemName]))
+
+// ADVANCED TIME COMPARISON
+Revenue 2 Years Ago = CALCULATE([Total Revenue], DATEADD(Calendar[Date], -2, YEAR))
+
+2-Year CAGR = POWER(DIVIDE([Total Revenue], [Revenue 2 Years Ago], 0), 0.5) - 1
+
+// BURN RATE & RUNWAY
+Monthly Burn Rate = DIVIDE([Total Expenses], 12, 0)
+
+Cash Runway Months = DIVIDE([Total AR] + [Cash Received], [Monthly Burn Rate], 0)
+
+// FINANCIAL HEALTH SCORES
+Liquidity Score = ([Total AR] + [Cash Received]) / [Bills Outstanding]
+
+Financial Health Score = 
+    ([Profit Margin %] * 0.3) + 
+    ([Revenue Growth %] * 0.3) + 
+    (1 - [Expense Ratio]) * 0.2 + 
+    ([Collection Rate %] * 0.2)
+
+// TAX DEDUCTIONS
+Charitable Contributions = CALCULATE(SUM(PurchaseLineItems[Amount]), FILTER(Account, CONTAINSSTRING(Account[AccountName], "Charitable") || CONTAINSSTRING(Account[AccountName], "Donation")))
+
+Business Meals Deductible = [Meals & Entertainment] * 0.50
+
+Business Travel = CALCULATE(SUM(PurchaseLineItems[Amount]), FILTER(Account, CONTAINSSTRING(Account[AccountName], "Travel")))
+
+Professional Fees = CALCULATE(SUM(PurchaseLineItems[Amount]), FILTER(Account, CONTAINSSTRING(Account[AccountName], "Legal") || CONTAINSSTRING(Account[AccountName], "Professional") || CONTAINSSTRING(Account[AccountName], "Consulting")))
+
+// CUSTOMER BEHAVIOR
+Average Days to Pay = AVERAGEX(FILTER(Invoice, Invoice[Balance] = 0), DATEDIFF(Invoice[Date], Invoice[DueDate], DAY))
